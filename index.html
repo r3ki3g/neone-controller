@@ -67,6 +67,19 @@
     .chip.active { background: var(--accent); color: #fff; }
     .meter { height: 8px; border-radius: 999px; background: var(--border); overflow: hidden; margin-top: 12px; }
     #meter-fill { height: 100%; width: 0; background: var(--ok); transition: width 60ms linear; }
+    #sync .meter { height: 4px; margin-top: 4px; }
+    #sync-fill { height: 100%; width: 0; background: var(--warn); transition: width 200ms ease; }
+    #sync.done #sync-fill { background: var(--ok); }
+    #sync p { margin: 6px 0 0; }
+    /* Colour wheel for touch screens: going around sets hue, distance from the centre sets saturation.
+       A white-to-transparent overlay on a hue ring gives exactly HSV with full value. */
+    .wheel { position: relative; width: min(100%, 260px); aspect-ratio: 1; margin: 4px auto 14px; border-radius: 50%;
+             touch-action: none; cursor: crosshair;
+             background: radial-gradient(closest-side, #fff, rgba(255, 255, 255, 0)),
+                         conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
+    .wheel.disabled { opacity: .45; pointer-events: none; }
+    #wheel-thumb { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%;
+                   border: 3px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .5); pointer-events: none; }
     pre#log { margin: 0; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
               font: 12px/1.5 ui-monospace, Menlo, monospace; color: var(--muted); }
     pre#log .ok { color: var(--ok); } pre#log .warn { color: var(--warn); } pre#log .err { color: var(--err); }
@@ -99,7 +112,11 @@
   <section id="controls">
     <h2>All lights</h2>
     <p id="targets" class="hint">No lights connected yet.</p>
-    <div class="row">
+    <div id="sync" hidden>
+      <div class="meter"><div id="sync-fill"></div></div>
+      <p id="sync-text" class="hint"></p>
+    </div>
+    <div class="row" style="margin-top: 12px">
       <button id="btn-all-on" disabled>All on</button>
       <button id="btn-all-off" class="secondary" disabled>All off</button>
     </div>
@@ -119,6 +136,7 @@
 
     <div class="panel" data-panel="colour">
       <label for="color">Colour</label>
+      <div id="wheel" class="wheel disabled" role="slider" aria-label="Colour wheel" hidden><div id="wheel-thumb"></div></div>
       <div class="row">
         <input id="color" type="color" value="#ff0000" disabled>
         <div id="swatches" class="swatches"></div>
@@ -257,7 +275,11 @@
   const LED_NAME_HINT = /ELK|BLEDOM|MELK|LEDBLE|LED|LIGHT|LAMP|STRIP|STAR|TRIONES|QHM|KS0\d|GATT--DEMO/i;
   const BASE_UUID_TAIL = '-0000-1000-8000-00805f9b34fb';
   const CONNECT_TIMEOUT_MS = 15000;
-  const MAX_RETRY_MS = 30000;
+  const MAX_RETRY_MS = 10000;
+  // A change waits this long for a light that isn't connected; after that the light misses it.
+  const PENDING_MAX_MS = 20000;
+  // Android Chrome's built-in colour picker only reports on close, so touch screens get the wheel.
+  const TOUCH = window.matchMedia('(pointer: coarse)').matches;
   // Set once a light has been added on this site, so an empty getDevices() after a
   // refresh can be recognised as "Chrome forgot them" rather than "first visit".
   const PAIRED_KEY = 'led-lights-paired-before';
@@ -356,7 +378,7 @@
   const STATUS_TEXT = {
     connected: ['ok', 'Connected'],
     connecting: ['warn', 'Connecting…'],
-    waiting: ['warn', 'Not reachable, retrying…'],
+    waiting: ['warn', 'Reconnecting…'],
     idle: ['err', 'Not connected'],
   };
 
@@ -367,6 +389,9 @@
   // What the lights are doing as a group: 'colour', 'scene', 'devicemic' or 'phonemic'.
   let mode = 'colour';
   let audio = null;
+  // True while some light is waiting for a change, so the result can be shown once it settles.
+  let syncActive = false;
+  let syncHideTimer = null;
 
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -492,6 +517,7 @@
 
   function render() {
     renderControls();
+    renderSync();
     renderLights();
     renderDiagnostics();
     renderTester();
@@ -500,7 +526,9 @@
   function renderControls() {
     const all = lights();
     const targets = controllable();
-    const off = !targets.length;
+    // Controls work as soon as lights are known, even before they connect: changes wait for them.
+    const off = !all.length;
+    $('#wheel').classList.toggle('disabled', off);
     $('#targets').textContent = all.length
       ? `${targets.length.toLocaleString()} of ${all.length.toLocaleString()} light${all.length === 1 ? '' : 's'} connected`
       : 'No lights added yet. Use "+ Add a light" below.';
@@ -512,6 +540,42 @@
     $('#scenes-mrstar-group').hidden = !brands.has('mrstar');
   }
 
+  function waitingFor(d) {
+    return d.status !== 'connected' && d.pending && d.pending.size > 0;
+  }
+
+  // Seconds until the newest waiting change for this light is dropped.
+  function secondsLeft(d) {
+    const newest = Math.max(...[...d.pending.values()].map((e) => e.at));
+    return Math.max(0, Math.ceil((newest + PENDING_MAX_MS - Date.now()) / 1000));
+  }
+
+  function renderSync() {
+    const all = lights();
+    const waiting = all.filter(waitingFor);
+    const total = all.length.toLocaleString();
+    if (waiting.length) {
+      clearTimeout(syncHideTimer);
+      syncHideTimer = null;
+      syncActive = true;
+      const left = Math.max(...waiting.map(secondsLeft));
+      $('#sync').hidden = false;
+      $('#sync').classList.remove('done');
+      $('#sync-fill').style.width = `${((all.length - waiting.length) / all.length) * 100}%`;
+      $('#sync-text').textContent = `${(all.length - waiting.length).toLocaleString()} of ${total} updated · `
+        + `${waiting.map(nameOf).join(', ')} waiting (${left.toLocaleString()} s left)`;
+    } else if (syncActive) {
+      syncActive = false;
+      const missed = all.filter((d) => d.missed);
+      $('#sync').classList.toggle('done', !missed.length);
+      $('#sync-fill').style.width = `${((all.length - missed.length) / all.length) * 100}%`;
+      $('#sync-text').textContent = missed.length
+        ? `${(all.length - missed.length).toLocaleString()} of ${total} updated · ${missed.map(nameOf).join(', ')} missed it (not back within 20 s)`
+        : `All ${total} updated`;
+      syncHideTimer = setTimeout(() => { $('#sync').hidden = true; }, missed.length ? 5000 : 2000);
+    }
+  }
+
   function renderLights() {
     const list = lights().sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
     if (!list.length) {
@@ -520,15 +584,20 @@
     }
     $('#lights').innerHTML = list.map((d) => {
       const id = esc(d.device.id);
-      const [dot, text] = STATUS_TEXT[d.status];
-      let buttons;
+      let [dot, text] = STATUS_TEXT[d.status];
+      if (waitingFor(d)) {
+        dot = 'warn';
+        text += ` · change waiting (${secondsLeft(d).toLocaleString()} s)`;
+      } else if (d.missed && d.status !== 'connected') {
+        text += ' · missed last change';
+      }
+      let buttons = '';
       if (d.status === 'connected' && d.writeChar) {
         buttons = `<button data-power="on" data-id="${id}">On</button>
                    <button class="secondary" data-power="off" data-id="${id}">Off</button>`;
-      } else if (d.status === 'idle' || d.status === 'waiting') {
-        buttons = `<button class="secondary" data-connect="${id}">Connect now</button>`;
-      } else {
-        buttons = '';
+      } else if (d.status === 'idle' && !d.wanted) {
+        // Only after a manual disconnect; otherwise the page reconnects on its own.
+        buttons = `<button class="secondary" data-connect="${id}">Connect</button>`;
       }
       return `<div class="light">
         <div class="info"><span class="dot ${dot}"></span>
@@ -599,30 +668,46 @@
 
   // Each device gets one write at a time (Web Bluetooth rejects overlapping GATT writes).
   // Repeated commands of the same kind collapse to the latest, so dragging a slider
-  // or streaming music levels does not build up a backlog.
-  function send(d, kind, bytes) {
+  // or streaming music levels does not build up a backlog. Commands for a light that
+  // isn't connected wait here for up to PENDING_MAX_MS. "Live" commands (phone-mic
+  // levels, tester) are never kept for a light that drops out.
+  function send(d, kind, bytes, live = false) {
     d.pending = d.pending || new Map();
     d.pending.delete(kind);
-    d.pending.set(kind, bytes);
-    if (!d.flushing) flush(d);
+    d.pending.set(kind, { bytes, at: Date.now(), live });
+    if (d.writeChar) {
+      if (!d.flushing) flush(d);
+    } else {
+      queueRender();
+    }
   }
 
   async function flush(d) {
     d.flushing = true;
     try {
       while (d.pending && d.pending.size && d.writeChar) {
-        const [kind, value] = d.pending.entries().next().value;
+        const [kind, entry] = d.pending.entries().next().value;
         d.pending.delete(kind);
-        const packets = Array.isArray(value[0]) ? value : [value];
+        if (Date.now() - entry.at > PENDING_MAX_MS) {
+          d.missed = true;
+          continue;
+        }
+        const packets = Array.isArray(entry.bytes[0]) ? entry.bytes : [entry.bytes];
         try {
           for (const bytes of packets) {
             const data = new Uint8Array(bytes);
             if (d.writeChar.properties.writeWithoutResponse) await d.writeChar.writeValueWithoutResponse(data);
             else await d.writeChar.writeValue(data);
           }
+          if (!entry.live) d.missed = false;
           if (kind === 'power' || kind === 'test') log(`${nameOf(d)}: ${kind} sent [${packets.map(hex).join(' | ')}]`, 'ok');
         } catch (err) {
           log(`${nameOf(d)}: ${kind} write failed: ${err.name}: ${err.message}`, 'err');
+          // Dropped mid-write: keep the change for the reconnect unless a newer one replaced it.
+          if (!d.device.gatt.connected) {
+            if (!entry.live && !d.pending.has(kind)) d.pending.set(kind, entry);
+            break;
+          }
         }
       }
     } finally {
@@ -630,10 +715,35 @@
     }
   }
 
-  function sendToAll(kind, build) {
-    controllable().forEach((d) => {
+  function dropLive(d) {
+    if (!d.pending) return;
+    for (const [kind, entry] of d.pending) if (entry.live) d.pending.delete(kind);
+  }
+
+  // Drops changes that waited too long for a light that hasn't come back.
+  function expirePending() {
+    const now = Date.now();
+    lights().forEach((d) => {
+      if (!d.pending || !d.pending.size || d.writeChar) return;
+      let dropped = false;
+      for (const [kind, entry] of d.pending) {
+        if (now - entry.at > PENDING_MAX_MS) {
+          d.pending.delete(kind);
+          dropped = true;
+        }
+      }
+      if (dropped) {
+        d.missed = true;
+        if (!d.pending.size) log(`${nameOf(d)} missed the change (not back within 20 s).`, 'warn');
+      }
+    });
+  }
+
+  // Group changes go to every known light, connected or not; live ones only to connected lights.
+  function sendToAll(kind, build, live = false) {
+    (live ? controllable() : lights()).forEach((d) => {
       const bytes = build(PROTOCOLS[d.protocol], d.protocol);
-      if (bytes) send(d, kind, bytes);
+      if (bytes) send(d, kind, bytes, live);
     });
   }
 
@@ -642,15 +752,16 @@
     log(`All lights ${on ? 'on' : 'off'}.`);
   }
 
-  function setColorAll(h, s) {
-    sendToAll('color', (p) => p.color(h, s));
+  function setColorAll(h, s, live = false) {
+    sendToAll('color', (p) => p.color(h, s), live);
   }
 
   // Switching the group to a new mode first undoes the old one: stops the phone mic,
   // or takes the lights out of their own mic mode.
   function enterMode(next) {
-    if (mode === 'phonemic' && next !== 'phonemic') stopPhoneMic();
-    if (mode === 'devicemic' && next !== 'devicemic') sendToAll('mic', (p) => p.micOff);
+    if (next === mode) return;
+    if (mode === 'phonemic') stopPhoneMic();
+    if (mode === 'devicemic') sendToAll('mic', (p) => p.micOff);
     mode = next;
     queueRender();
   }
@@ -677,14 +788,14 @@
 
   function playBrandScene(brand, value, name) {
     enterMode('scene');
-    controllable().filter((d) => d.protocol === brand).forEach((d) => send(d, 'mode', PROTOCOLS[brand].scene(value)));
+    lights().filter((d) => d.protocol === brand).forEach((d) => send(d, 'mode', PROTOCOLS[brand].scene(value)));
     log(`Scene: ${name} on ${PROTOCOLS[brand].label} lights.`);
   }
 
   function startDeviceMic(index) {
     enterMode('devicemic');
     const sensitivity = Number($('#sensitivity').value);
-    controllable().forEach((d) => {
+    lights().forEach((d) => {
       const p = PROTOCOLS[d.protocol];
       send(d, 'mic', p.micOn);
       if (p.micPattern) send(d, 'mode', p.micPattern(index));
@@ -799,11 +910,11 @@
     if (audio.sentHue === null || Math.abs(h - audio.sentHue) >= 4 || s !== audio.sentSat) {
       audio.sentHue = h;
       audio.sentSat = s;
-      setColorAll(h, s);
+      setColorAll(h, s, true);
     }
     if (pct !== audio.sentPct) {
       audio.sentPct = pct;
-      sendToAll('brightness', (p) => p.brightness(pct));
+      sendToAll('brightness', (p) => p.brightness(pct), true);
     }
   }
 
@@ -851,7 +962,7 @@
     const d = testerDevice();
     if (!d) return;
     log(`Tester: scene ${n} (0x${n.toString(16).padStart(2, '0')}) → ${nameOf(d)}`);
-    send(d, 'test', PROTOCOLS[d.protocol].scene(n));
+    send(d, 'test', PROTOCOLS[d.protocol].scene(n), true);
   }
 
   function sendTestRaw() {
@@ -862,7 +973,7 @@
       log('Tester: enter 1–20 bytes of hex, e.g. "bc 0f 01 01 55".', 'warn');
       return;
     }
-    send(d, 'test', clean.match(/../g).map((b) => parseInt(b, 16)));
+    send(d, 'test', clean.match(/../g).map((b) => parseInt(b, 16)), true);
   }
 
   function withTimeout(promise, ms) {
@@ -882,7 +993,7 @@
     d.listening = true;
     d.device.addEventListener('gattserverdisconnected', () => {
       d.writeChar = null;
-      d.pending = null;
+      dropLive(d);
       if (d.status === 'connected') log(`${nameOf(d)} disconnected.`, 'warn');
       if (d.status === 'connecting') return;
       d.status = 'idle';
@@ -900,7 +1011,7 @@
 
   function scheduleReconnect(d) {
     clearTimeout(d.retryTimer);
-    d.retryDelay = Math.min((d.retryDelay || 2000) * 2, MAX_RETRY_MS);
+    d.retryDelay = Math.min(d.retryDelay ? d.retryDelay * 2 : 1000, MAX_RETRY_MS);
     d.status = 'waiting';
     d.retryTimer = setTimeout(() => {
       d.status = 'idle';
@@ -916,6 +1027,16 @@
   function stopWatching(d) {
     if (d.watchAbort) d.watchAbort.abort();
     d.watchAbort = null;
+  }
+
+  // Skips the wait when the page comes back on screen or Bluetooth turns back on.
+  function reconnectAllNow() {
+    lights().forEach((d) => {
+      if (!d.wanted || (d.status !== 'waiting' && d.status !== 'idle')) return;
+      clearTimeout(d.retryTimer);
+      d.retryDelay = 0;
+      connect(d.device.id);
+    });
   }
 
   async function connect(id) {
@@ -944,9 +1065,14 @@
       }
       d.status = 'connected';
       d.retryDelay = 0;
+      d.missed = false;
       stopWatching(d);
       log(`${nameOf(d)} connected.`, 'ok');
       if (d.protocol && !d.writeChar) log(`${nameOf(d)} looks like ${PROTOCOLS[d.protocol].label} but has no fff3 characteristic.`, 'warn');
+      if (d.writeChar && d.pending && d.pending.size) {
+        log(`${nameOf(d)}: catching up on ${d.pending.size.toLocaleString()} waiting change(s).`);
+        flush(d);
+      }
     } catch (err) {
       // Also aborts a connect() that is still hanging after the timeout.
       d.device.gatt.disconnect();
@@ -1035,7 +1161,9 @@
       log(`Chrome remembers ${remembered.length.toLocaleString()} device(s).`);
       remembered.forEach((device, i) => {
         const d = upsert(device, { source: 'picked' });
-        if (d.protocol) setTimeout(() => connect(device.id), i * 400);
+        if (!d.protocol) return;
+        d.wanted = true;
+        setTimeout(() => connect(device.id), i * 400);
       });
       if (!remembered.length && pairedBefore()) {
         setCheck('remember', 'err', 'Lights were added before, but Chrome forgot them');
@@ -1071,6 +1199,7 @@
     navigator.bluetooth.addEventListener('availabilitychanged', (e) => {
       setCheck('adapter', e.value ? 'ok' : 'err', e.value ? 'Bluetooth adapter on' : 'Bluetooth adapter off');
       log(`Bluetooth adapter ${e.value ? 'became available' : 'went away'}.`, e.value ? 'ok' : 'warn');
+      if (e.value) reconnectAllNow();
     });
     if (typeof navigator.bluetooth.requestLEScan === 'function') {
       setCheck('scan', 'ok', 'Passive scanning available');
@@ -1123,17 +1252,71 @@
     }
   });
 
+  // Keeps the hidden colour input (read by Pulse and Stop music) and the wheel in step.
+  function showColour(h, s) {
+    $('#color').value = rgbToHex(hsvToRgb(h, s, 1));
+    const thumb = $('#wheel-thumb');
+    const rad = (h * Math.PI) / 180;
+    thumb.style.left = `${50 + 50 * s * Math.sin(rad)}%`;
+    thumb.style.top = `${50 - 50 * s * Math.cos(rad)}%`;
+    thumb.style.background = $('#color').value;
+  }
+
+  // Sends at most 20 colours a second while dragging, always ending on the last one.
+  let wheelTimer = null;
+  let wheelNext = null;
+  function pickColourThrottled(h, s) {
+    wheelNext = [h, s];
+    if (wheelTimer) return;
+    pickColour(h, s);
+    wheelNext = null;
+    wheelTimer = setTimeout(() => {
+      wheelTimer = null;
+      if (wheelNext) pickColourThrottled(...wheelNext);
+    }, 50);
+  }
+
+  function setupWheel() {
+    const wheel = $('#wheel');
+    let dragging = false;
+    const pick = (e) => {
+      const rect = wheel.getBoundingClientRect();
+      const dx = e.clientX - (rect.left + rect.width / 2);
+      const dy = e.clientY - (rect.top + rect.height / 2);
+      const s = Math.min(1, Math.hypot(dx, dy) / (rect.width / 2));
+      // Angle clockwise from the top, matching the conic gradient: red at 12 o'clock.
+      const h = ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360;
+      showColour(h, s);
+      pickColourThrottled(h, s);
+    };
+    wheel.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      wheel.setPointerCapture(e.pointerId);
+      pick(e);
+    });
+    wheel.addEventListener('pointermove', (e) => { if (dragging) pick(e); });
+    wheel.addEventListener('pointerup', () => { dragging = false; });
+    wheel.addEventListener('pointercancel', () => { dragging = false; });
+    if (TOUCH) {
+      wheel.hidden = false;
+      $('#color').hidden = true;
+    }
+    const { h, s } = hexToHsv($('#color').value);
+    showColour(h, s);
+  }
+
   $('#btn-all-on').addEventListener('click', () => setPowerAll(true));
   $('#btn-all-off').addEventListener('click', () => setPowerAll(false));
   $('#color').addEventListener('input', (e) => {
     const { h, s } = hexToHsv(e.target.value);
+    showColour(h, s);
     pickColour(h, s);
   });
   $('#swatches').addEventListener('click', (e) => {
     const b = e.target.closest('.swatch');
     if (!b) return;
     const h = Number(b.dataset.h), s = Number(b.dataset.s);
-    $('#color').value = rgbToHex(hsvToRgb(h, s, 1));
+    showColour(h, s);
     pickColour(h, s);
     log(`Colour set to ${b.title}.`);
   });
@@ -1176,10 +1359,19 @@
   $('#tester-send-raw').addEventListener('click', sendTestRaw);
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') keepAwake();
+    if (document.visibilityState !== 'visible') return;
+    keepAwake();
+    reconnectAllNow();
   });
 
+  // Once a second: drop changes that waited too long, and refresh the countdowns.
+  setInterval(() => {
+    expirePending();
+    if (syncActive || lights().some(waitingFor)) queueRender();
+  }, 1000);
+
   buildChips();
+  setupWheel();
   let savedTab = null;
   try { savedTab = localStorage.getItem(TAB_KEY); } catch { /* fall back to the first tab */ }
   showTab(['colour', 'scenes', 'music'].includes(savedTab) ? savedTab : 'colour');

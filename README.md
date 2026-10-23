@@ -25,7 +25,9 @@ Chrome remembers lights per site, so `localhost` and a GitHub Pages address each
 
 ## Features
 
-- **Colour:** one colour picker and presets for every light, plus a shared brightness slider.
+- **Colour:** one colour picker and presets for every light, plus a shared brightness slider. On phones it's a built-in colour wheel that updates the lights live while you drag, because Android Chrome's own picker only reports the colour when its dialog closes.
+- **Always reconnecting:** lights that drop out are retried every few seconds (never more than 10 s apart), and straight away when the page comes back on screen or Bluetooth turns back on.
+- **Catch-up:** a change made while a light is disconnected waits up to 20 s for it. A bar shows "3 of 4 updated · … waiting", then whether every light got the change or one missed it.
 - **Scenes:** "Together" scenes that pick the closest match on each brand, each brand's full scene list, and a shared speed slider.
 - **Music:**
   - *Lights' own mics:* each controller listens with its own mic. LotusLamp X uses the chosen pattern (Energy, Rhythm, Spectrum, Scroll 1/2); MR Star uses its built-in music mode. One sensitivity slider covers both.
