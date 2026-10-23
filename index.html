@@ -71,15 +71,39 @@
     #sync-fill { height: 100%; width: 0; background: var(--warn); transition: width 200ms ease; }
     #sync.done #sync-fill { background: var(--ok); }
     #sync p { margin: 6px 0 0; }
-    /* Colour wheel for touch screens: going around sets hue, distance from the centre sets saturation.
-       A white-to-transparent overlay on a hue ring gives exactly HSV with full value. */
-    .wheel { position: relative; width: min(100%, 260px); aspect-ratio: 1; margin: 4px auto 14px; border-radius: 50%;
-             touch-action: none; cursor: crosshair;
-             background: radial-gradient(closest-side, #fff, rgba(255, 255, 255, 0)),
-                         conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
+    /* Colour wheel: going around the disc sets hue, distance from the centre sets saturation
+       (a white-to-transparent overlay on a hue ring gives exactly HSV with full value).
+       The outer rim is a dimmer: Off at the bottom left, clockwise to Max at the bottom right. */
+    .wheel { --rim: 28px; --gap: 10px; --rim-colour: #f00;
+             position: relative; width: min(100%, 300px); aspect-ratio: 1; margin: 4px auto 14px; touch-action: none; }
     .wheel.disabled { opacity: .45; pointer-events: none; }
-    #wheel-thumb { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%;
+    .wheel .rim { position: absolute; inset: 0; border-radius: 50%;
+                  background: conic-gradient(from 210deg, #000, var(--rim-colour) 300deg, transparent 300deg);
+                  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--rim)), #000 calc(100% - var(--rim) + 1px));
+                          mask: radial-gradient(farthest-side, transparent calc(100% - var(--rim)), #000 calc(100% - var(--rim) + 1px)); }
+    .wheel .disc { position: absolute; inset: calc(var(--rim) + var(--gap)); border-radius: 50%; cursor: crosshair;
+                   background: radial-gradient(closest-side, #fff, rgba(255, 255, 255, 0)),
+                               conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
+    #wheel-thumb, #rim-thumb { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%;
                    border: 3px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .5); pointer-events: none; }
+    #rim-thumb { background: var(--panel); }
+    .rim-label { position: absolute; bottom: 0; font-size: .72rem; color: var(--muted); pointer-events: none; }
+    .rim-label.off { left: 33%; } .rim-label.max { right: 33%; }
+    label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: .9rem; }
+    input[type=checkbox] { width: auto; padding: 0; accent-color: var(--accent); }
+    .recorder { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+    #btn-record.recording { background: var(--err); }
+    .options { align-items: flex-end; }
+    .options .opt { flex: 1; min-width: 110px; }
+    .options label.check { margin-bottom: 10px; }
+    .ribbon { display: block; width: 100%; height: 36px; margin: 8px 0; border-radius: 6px; background: var(--bg); }
+    .ribbon.big { height: 56px; cursor: pointer; }
+    .show { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 10px; }
+    .show.playing { border-color: var(--accent); }
+    .show-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; }
+    .show-head .name { font-weight: 600; word-break: break-word; }
+    #now-playing { border: 1px solid var(--accent); border-radius: 10px; padding: 12px; margin: 12px 0; }
+    .countdown { font-weight: 600; color: var(--warn); }
     pre#log { margin: 0; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
               font: 12px/1.5 ui-monospace, Menlo, monospace; color: var(--muted); }
     pre#log .ok { color: var(--ok); } pre#log .warn { color: var(--warn); } pre#log .err { color: var(--err); }
@@ -123,7 +147,7 @@
     <div class="control-group">
       <label for="brightness">Brightness</label>
       <div class="row">
-        <input id="brightness" type="range" min="1" max="100" value="100" disabled>
+        <input id="brightness" type="range" min="0" max="100" value="100" disabled>
         <span id="brightness-value" class="value">100.0%</span>
       </div>
     </div>
@@ -132,16 +156,39 @@
       <button class="tab active" data-tab="colour" role="tab">Colour</button>
       <button class="tab" data-tab="scenes" role="tab">Scenes</button>
       <button class="tab" data-tab="music" role="tab">Music</button>
+      <button class="tab" data-tab="shows" role="tab">Shows</button>
     </div>
 
     <div class="panel" data-panel="colour">
       <label for="color">Colour</label>
-      <div id="wheel" class="wheel disabled" role="slider" aria-label="Colour wheel" hidden><div id="wheel-thumb"></div></div>
+      <div id="wheel" class="wheel disabled" hidden>
+        <div class="rim" aria-label="Brightness ring"></div>
+        <div class="disc" aria-label="Colour wheel"><div id="wheel-thumb"></div></div>
+        <div id="rim-thumb"></div>
+        <span class="rim-label off">Off</span>
+        <span class="rim-label max">Max</span>
+      </div>
       <div class="row">
         <input id="color" type="color" value="#ff0000" disabled>
         <div id="swatches" class="swatches"></div>
       </div>
-      <p class="hint">Every light gets the same hue and saturation. Use the brightness slider for darker or lighter.</p>
+      <label id="wheel-toggle" class="check" hidden><input id="opt-wheel" type="checkbox"> Use colour wheel</label>
+      <p class="hint">Every light gets the same colour. On the wheel, go around for the colour and towards the centre for paler;
+        the outer ring is brightness, all the way down to off.</p>
+      <div class="recorder">
+        <div class="row">
+          <button id="btn-record" class="secondary" disabled>● Record</button>
+          <span id="rec-status" class="hint"></span>
+        </div>
+        <div id="rec-save" hidden>
+          <label for="rec-name">Name this show</label>
+          <input id="rec-name" maxlength="80" autocomplete="off">
+          <div class="row" style="margin-top: 8px">
+            <button id="btn-rec-save">Save</button>
+            <button id="btn-rec-discard" class="secondary">Discard</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="panel" data-panel="scenes" hidden>
@@ -189,6 +236,46 @@
       <div class="row" style="margin-top: 12px">
         <button id="btn-music-stop" class="secondary" disabled>Stop music</button>
       </div>
+    </div>
+
+    <div class="panel" data-panel="shows" hidden>
+      <div id="now-playing" hidden>
+        <div class="show-head"><span id="np-name" class="name"></span><span id="np-time" class="hint"></span></div>
+        <canvas id="np-ribbon" class="ribbon big" title="Tap to jump"></canvas>
+        <div class="row">
+          <button id="btn-np-toggle">❚❚ Pause</button>
+          <button id="btn-np-stop" class="secondary">■ Stop</button>
+          <span id="np-countdown" class="countdown"></span>
+        </div>
+      </div>
+      <div class="row options">
+        <div class="opt">
+          <label for="opt-smooth">Smoothing</label>
+          <select id="opt-smooth">
+            <option value="exact">As recorded</option>
+            <option value="smooth">Smooth</option>
+            <option value="extra">Extra smooth</option>
+          </select>
+        </div>
+        <div class="opt">
+          <label for="opt-speed">Speed</label>
+          <select id="opt-speed">
+            <option value="0.5">0.5×</option>
+            <option value="1">1×</option>
+            <option value="2">2×</option>
+          </select>
+        </div>
+        <label class="check"><input id="opt-repeat" type="checkbox"> Repeat</label>
+      </div>
+      <div class="row" style="margin-top: 12px">
+        <button id="btn-play-all" disabled>▶ Play all</button>
+        <button id="btn-export" class="secondary" disabled>Export</button>
+        <button id="btn-import" class="secondary">Import</button>
+        <input id="import-file" type="file" accept=".json,application/json" hidden>
+      </div>
+      <div id="show-list"></div>
+      <p id="show-storage" class="hint"></p>
+      <p class="hint">Shows are saved in this browser only. Use Export to back them up or move them to another device.</p>
     </div>
   </section>
 
@@ -284,6 +371,15 @@
   // refresh can be recognised as "Chrome forgot them" rather than "first visit".
   const PAIRED_KEY = 'led-lights-paired-before';
   const TAB_KEY = 'led-lights-tab';
+  const TABS = ['colour', 'scenes', 'music', 'shows'];
+  const SETTINGS_KEY = 'led-lights-settings';
+  const SHOWS_KEY = 'led-lights-shows';
+  // Dimmer rim: angles clockwise from 12 o'clock. Off at 210° (bottom left), Max 300° further round.
+  const RIM_START = 210;
+  const RIM_SWEEP = 300;
+  const MAX_RECORD_MS = 10 * 60 * 1000;
+  // "Smooth" playback fades into each recorded change over at most this long.
+  const FADE_MS = 500;
 
   // Scene numbers. LotusLamp X values come from elkbledom's MELK-Ox effect list (some are
   // unnamed there); MR Star values from the ha-findn-led-ble integration.
@@ -392,6 +488,36 @@
   // True while some light is waiting for a change, so the result can be shown once it settles.
   let syncActive = false;
   let syncHideTimer = null;
+  // The colour and brightness shown in the controls; brightness 0 means the lights are off.
+  const current = { h: 0, s: 1, b: 100 };
+  // Set when the lights were switched off (All off, or brightness taken to Off).
+  let poweredOff = false;
+  let wakeLock = null;
+
+  function loadJson(key, fallback) {
+    try {
+      return JSON.parse(localStorage.getItem(key)) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  const settings = { wheel: false, smoothing: 'smooth', speed: 1, repeat: false, ...loadJson(SETTINGS_KEY, {}) };
+  if (!['exact', 'smooth', 'extra'].includes(settings.smoothing)) settings.smoothing = 'smooth';
+  if (![0.5, 1, 2].includes(settings.speed)) settings.speed = 1;
+
+  function saveSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* settings are a convenience */ }
+  }
+
+  // A show is { id, name, created, duration, events: [[ms, hue 0-359, saturation 0-1000, brightness 0-100], ...] }.
+  const storedShows = loadJson(SHOWS_KEY, []);
+  let shows = (Array.isArray(storedShows) ? storedShows : []).map(cleanShow).filter(Boolean);
+  const recorder = { active: false, startedAt: 0, events: [], timer: null, draft: null };
+  const player = {
+    queue: [], index: 0, show: null, samples: null, pos: 0,
+    playing: false, startedAt: 0, timer: null, countdown: null, last: null,
+  };
 
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -532,7 +658,7 @@
     $('#targets').textContent = all.length
       ? `${targets.length.toLocaleString()} of ${all.length.toLocaleString()} light${all.length === 1 ? '' : 's'} connected`
       : 'No lights added yet. Use "+ Add a light" below.';
-    $('#controls').querySelectorAll('#btn-all-on, #btn-all-off, #brightness, #color, #speed, #sensitivity, #swatches button, .chip[data-action]')
+    $('#controls').querySelectorAll('#btn-all-on, #btn-all-off, #brightness, #color, #speed, #sensitivity, #btn-record, #swatches button, .chip[data-action]')
       .forEach((el) => { el.disabled = off; });
     $('#btn-music-stop').disabled = off || !(mode === 'devicemic' || mode === 'phonemic');
     const brands = new Set(all.map((d) => d.protocol));
@@ -748,7 +874,13 @@
   }
 
   function setPowerAll(on) {
+    poweredOff = !on;
     sendToAll('power', (p) => p.power(on));
+    // Turning on while the dimmer is at Off would leave the lights dark, so bring brightness back.
+    if (on && !current.b) {
+      setBrightnessUi(100);
+      sendToAll('brightness', (p) => p.brightness(100));
+    }
     log(`All lights ${on ? 'on' : 'off'}.`);
   }
 
@@ -762,6 +894,7 @@
     if (next === mode) return;
     if (mode === 'phonemic') stopPhoneMic();
     if (mode === 'devicemic') sendToAll('mic', (p) => p.micOff);
+    if (mode === 'show') pausePlayer();
     mode = next;
     queueRender();
   }
@@ -772,6 +905,7 @@
   }
 
   function pickColour(h, s) {
+    recordState();
     // In Pulse, the listener reads the colour picker itself, so the music keeps going.
     if (mode === 'phonemic' && audio && audio.pattern === 'pulse') return;
     enterMode('colour');
@@ -827,7 +961,7 @@
         ctx, stream, analyser, pattern,
         bins: new Uint8Array(analyser.frequencyBinCount),
         floor: 0.05, bassAvg: 0, flash: 0, beatIndex: 0, lastBeat: 0,
-        sentHue: null, sentSat: null, sentPct: null, wakeLock: null,
+        sentHue: null, sentSat: null, sentPct: null,
       };
       audio.timer = setInterval(listenTick, 50);
       keepAwake();
@@ -844,21 +978,28 @@
     clearInterval(audio.timer);
     audio.stream.getTracks().forEach((t) => t.stop());
     audio.ctx.close();
-    if (audio.wakeLock) audio.wakeLock.release().catch(() => {});
     audio = null;
+    releaseAwake();
     $('#meter-fill').style.width = '0%';
-    const pct = Number($('#brightness').value);
-    sendToAll('brightness', (p) => p.brightness(pct));
+    if (current.b) sendToAll('brightness', (p) => p.brightness(current.b));
     log('Stopped listening.');
   }
 
+  // Keeps the screen on while the phone mic listens or a show plays: Android pauses hidden pages.
   async function keepAwake() {
-    if (!audio || !('wakeLock' in navigator)) return;
+    if (!(audio || player.playing) || wakeLock || !('wakeLock' in navigator)) return;
     try {
-      audio.wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
     } catch {
       // Not allowed right now (e.g. tab hidden); retried when the page is visible again.
     }
+  }
+
+  function releaseAwake() {
+    if (audio || player.playing || !wakeLock) return;
+    wakeLock.release().catch(() => {});
+    wakeLock = null;
   }
 
   function bandLevel(fromHz, toHz) {
@@ -903,10 +1044,11 @@
       h = (mid * 120 + t * 240) / (bass + mid + t || 1);
     }
 
-    const max = Number($('#brightness').value);
+    $('#meter-fill').style.width = `${Math.round(x * 100)}%`;
+    const max = current.b;
+    if (!max) return; // Dimmer at Off: the lights stay off.
     const min = Math.max(1, Math.round(max * 0.05));
     const pct = Math.round(min + x * (max - min));
-    $('#meter-fill').style.width = `${Math.round(x * 100)}%`;
     if (audio.sentHue === null || Math.abs(h - audio.sentHue) >= 4 || s !== audio.sentSat) {
       audio.sentHue = h;
       audio.sentSat = s;
@@ -930,6 +1072,8 @@
     document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
     document.querySelectorAll('.panel').forEach((p) => { p.hidden = p.dataset.panel !== name; });
     try { localStorage.setItem(TAB_KEY, name); } catch { /* remembering the tab is optional */ }
+    // Canvases can only be measured once visible.
+    if (name === 'shows') requestAnimationFrame(drawAllRibbons);
   }
 
   function showSource(name) {
@@ -1072,6 +1216,12 @@
       if (d.writeChar && d.pending && d.pending.size) {
         log(`${nameOf(d)}: catching up on ${d.pending.size.toLocaleString()} waiting change(s).`);
         flush(d);
+      }
+      // A show or the phone mic only sends changes, so make the next tick resend everything for this light.
+      if (player.playing) player.last = null;
+      if (audio) {
+        audio.sentHue = null;
+        audio.sentPct = null;
       }
     } catch (err) {
       // Also aborts a connect() that is still hanging after the timeout.
@@ -1254,55 +1404,657 @@
 
   // Keeps the hidden colour input (read by Pulse and Stop music) and the wheel in step.
   function showColour(h, s) {
+    current.h = h;
+    current.s = s;
     $('#color').value = rgbToHex(hsvToRgb(h, s, 1));
     const thumb = $('#wheel-thumb');
     const rad = (h * Math.PI) / 180;
     thumb.style.left = `${50 + 50 * s * Math.sin(rad)}%`;
     thumb.style.top = `${50 - 50 * s * Math.cos(rad)}%`;
     thumb.style.background = $('#color').value;
+    $('#wheel').style.setProperty('--rim-colour', $('#color').value);
   }
 
-  // Sends at most 20 colours a second while dragging, always ending on the last one.
-  let wheelTimer = null;
-  let wheelNext = null;
-  function pickColourThrottled(h, s) {
-    wheelNext = [h, s];
-    if (wheelTimer) return;
-    pickColour(h, s);
-    wheelNext = null;
-    wheelTimer = setTimeout(() => {
-      wheelTimer = null;
-      if (wheelNext) pickColourThrottled(...wheelNext);
-    }, 50);
+  function setBrightnessUi(b) {
+    current.b = b;
+    $('#brightness').value = b;
+    $('#brightness-value').textContent = b ? `${b.toFixed(1)}%` : 'Off';
+    const rad = ((RIM_START + (b / 100) * RIM_SWEEP) * Math.PI) / 180;
+    const thumb = $('#rim-thumb');
+    thumb.style.left = `calc(50% + (${Math.sin(rad).toFixed(4)}) * (50% - var(--rim) / 2))`;
+    thumb.style.top = `calc(50% - (${Math.cos(rad).toFixed(4)}) * (50% - var(--rim) / 2))`;
+  }
+
+  // A brightness chosen on the slider or rim. 0 means off: the lights get a real off
+  // command, and coming back up turns them on again.
+  function applyBrightness(b) {
+    setBrightnessUi(b);
+    if (mode === 'show') pausePlayer();
+    recordState();
+    if (!b) {
+      if (!poweredOff) sendToAll('power', (p) => p.power(false));
+      poweredOff = true;
+      return;
+    }
+    if (poweredOff) {
+      poweredOff = false;
+      sendToAll('power', (p) => p.power(true));
+    }
+    // While the phone mic is listening, brightness is the maximum and the listener sends it.
+    if (mode !== 'phonemic') sendToAll('brightness', (p) => p.brightness(b));
+  }
+
+  // Runs fn at most every `ms` while called repeatedly, always ending on the last call.
+  function throttled(fn, ms = 50) {
+    let timer = null;
+    let next = null;
+    const run = (...args) => {
+      next = args;
+      if (timer) return;
+      fn(...next);
+      next = null;
+      timer = setTimeout(() => {
+        timer = null;
+        if (next) run(...next);
+      }, ms);
+    };
+    return run;
+  }
+  // At most 20 updates a second while dragging on the wheel or rim.
+  const pickColourThrottled = throttled(pickColour);
+  const applyBrightnessThrottled = throttled(applyBrightness);
+
+  function updateWheelVisibility() {
+    const useWheel = TOUCH || settings.wheel;
+    $('#wheel').hidden = !useWheel;
+    $('#color').hidden = useWheel;
   }
 
   function setupWheel() {
     const wheel = $('#wheel');
-    let dragging = false;
+    let dragging = null; // 'disc' or 'rim' for the current drag
     const pick = (e) => {
       const rect = wheel.getBoundingClientRect();
-      const dx = e.clientX - (rect.left + rect.width / 2);
-      const dy = e.clientY - (rect.top + rect.height / 2);
-      const s = Math.min(1, Math.hypot(dx, dy) / (rect.width / 2));
-      // Angle clockwise from the top, matching the conic gradient: red at 12 o'clock.
-      const h = ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360;
-      showColour(h, s);
-      pickColourThrottled(h, s);
+      const style = getComputedStyle(wheel);
+      const rim = parseFloat(style.getPropertyValue('--rim')) || 28;
+      const gap = parseFloat(style.getPropertyValue('--gap')) || 10;
+      const radius = rect.width / 2;
+      const dx = e.clientX - (rect.left + radius);
+      const dy = e.clientY - (rect.top + radius);
+      const dist = Math.hypot(dx, dy);
+      // Angle clockwise from the top, matching the conic gradients: red at 12 o'clock.
+      const angle = ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360;
+      const rel = (angle - RIM_START + 360) % 360;
+      if (!dragging) {
+        if (dist < radius - rim - gap / 2) dragging = 'disc';
+        else if (rel <= RIM_SWEEP) dragging = 'rim';
+        else return; // the gap between Off and Max
+      }
+      if (dragging === 'rim') {
+        // Dragged past either end: stick to the nearer end.
+        const v = rel <= RIM_SWEEP ? rel / RIM_SWEEP : (rel < RIM_SWEEP + (360 - RIM_SWEEP) / 2 ? 1 : 0);
+        const b = Math.round(v * 100);
+        setBrightnessUi(b);
+        applyBrightnessThrottled(b);
+      } else {
+        const s = Math.min(1, dist / (radius - rim - gap));
+        showColour(angle, s);
+        pickColourThrottled(angle, s);
+      }
     };
     wheel.addEventListener('pointerdown', (e) => {
-      dragging = true;
-      wheel.setPointerCapture(e.pointerId);
+      dragging = null;
       pick(e);
+      if (dragging) wheel.setPointerCapture(e.pointerId);
     });
     wheel.addEventListener('pointermove', (e) => { if (dragging) pick(e); });
-    wheel.addEventListener('pointerup', () => { dragging = false; });
-    wheel.addEventListener('pointercancel', () => { dragging = false; });
-    if (TOUCH) {
-      wheel.hidden = false;
-      $('#color').hidden = true;
-    }
+    wheel.addEventListener('pointerup', () => { dragging = null; });
+    wheel.addEventListener('pointercancel', () => { dragging = null; });
+
+    $('#wheel-toggle').hidden = TOUCH;
+    $('#opt-wheel').checked = settings.wheel;
+    $('#opt-wheel').addEventListener('change', (e) => {
+      settings.wheel = e.target.checked;
+      saveSettings();
+      updateWheelVisibility();
+    });
+    updateWheelVisibility();
     const { h, s } = hexToHsv($('#color').value);
     showColour(h, s);
+    setBrightnessUi(current.b);
+  }
+
+  // ---- Recorder ----
+
+  function fmtTime(ms) {
+    const total = Math.floor(ms / 1000);
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  }
+
+  function fmtDate(date, withTime = false) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const day = `${pad(date.getMonth() + 1)}/${pad(date.getDate())}/${pad(date.getFullYear() % 100)}`;
+    return withTime ? `${day} ${pad(date.getHours())}:${pad(date.getMinutes())}` : day;
+  }
+
+  function newId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  function snapshot(t) {
+    return [t, Math.round(current.h) % 360, Math.round(current.s * 1000), current.b];
+  }
+
+  // Called for every colour or brightness change the user makes.
+  function recordState() {
+    if (!recorder.active) return;
+    const t = Math.round(performance.now() - recorder.startedAt);
+    const events = recorder.events;
+    // At most one sample per 40 ms; the newest wins, so where a drag ends is always kept.
+    if (events.length > 1 && t - events[events.length - 1][0] < 40) events[events.length - 1] = snapshot(t);
+    else events.push(snapshot(t));
+  }
+
+  function startRecording() {
+    recorder.active = true;
+    recorder.startedAt = performance.now();
+    recorder.events = [snapshot(0)];
+    recorder.draft = null;
+    $('#rec-save').hidden = true;
+    $('#btn-record').textContent = '■ Stop';
+    $('#btn-record').classList.add('recording');
+    recorder.timer = setInterval(updateRecStatus, 250);
+    updateRecStatus();
+    log('Recording started.');
+  }
+
+  function updateRecStatus() {
+    const ms = performance.now() - recorder.startedAt;
+    if (ms >= MAX_RECORD_MS) {
+      stopRecording();
+      log('Recording stopped at the 10-minute limit.', 'warn');
+      return;
+    }
+    $('#rec-status').textContent = `● ${fmtTime(ms)} · ${(recorder.events.length - 1).toLocaleString()} changes`;
+  }
+
+  function stopRecording() {
+    recorder.active = false;
+    clearInterval(recorder.timer);
+    const duration = Math.min(MAX_RECORD_MS, Math.max(1000, Math.round(performance.now() - recorder.startedAt)));
+    recorder.draft = { duration, events: recorder.events };
+    $('#btn-record').textContent = '● Record';
+    $('#btn-record').classList.remove('recording');
+    $('#rec-status').textContent = `${fmtTime(duration)} · ${(recorder.events.length - 1).toLocaleString()} changes`;
+    $('#rec-name').value = `Show ${fmtDate(new Date(), true)}`;
+    $('#rec-save').hidden = false;
+  }
+
+  function saveRecording() {
+    if (!recorder.draft) return;
+    const name = $('#rec-name').value.trim().slice(0, 80) || `Show ${fmtDate(new Date(), true)}`;
+    const show = { id: newId(), name, created: Date.now(), ...recorder.draft };
+    shows.unshift(show);
+    if (!persistShows()) {
+      shows.shift();
+      $('#rec-status').textContent = 'Storage is full. Export and delete some shows, then save again.';
+      return;
+    }
+    recorder.draft = null;
+    $('#rec-save').hidden = true;
+    $('#rec-status').textContent = `Saved "${name}" to Shows.`;
+    log(`Saved show "${name}" (${fmtTime(show.duration)}).`, 'ok');
+    renderShows();
+  }
+
+  function discardRecording() {
+    recorder.draft = null;
+    $('#rec-save').hidden = true;
+    $('#rec-status').textContent = '';
+  }
+
+  // ---- Shows library ----
+
+  // Makes a stored or imported show safe to use: numbers clamped, events sorted.
+  function cleanShow(x) {
+    if (!x || typeof x.name !== 'string' || !Array.isArray(x.events)) return null;
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Math.round(Number(v)) || 0));
+    const events = x.events
+      .filter((e) => Array.isArray(e) && e.length === 4 && e.every((v) => Number.isFinite(Number(v))))
+      .map(([t, h, s, b]) => [clamp(t, 0, MAX_RECORD_MS), clamp(h, 0, 359), clamp(s, 0, 1000), clamp(b, 0, 100)])
+      .sort((a, b) => a[0] - b[0]);
+    if (!events.length) return null;
+    const last = events[events.length - 1][0];
+    return {
+      id: typeof x.id === 'string' && x.id ? x.id.slice(0, 40) : newId(),
+      name: x.name.trim().slice(0, 80) || 'Untitled show',
+      created: Number.isFinite(x.created) ? x.created : Date.now(),
+      duration: clamp(x.duration, Math.max(1000, last), MAX_RECORD_MS),
+      events,
+    };
+  }
+
+  function persistShows() {
+    try {
+      localStorage.setItem(SHOWS_KEY, JSON.stringify(shows));
+      return true;
+    } catch (err) {
+      log(`Could not save shows (${err.name}). Storage may be full.`, 'err');
+      return false;
+    }
+  }
+
+  function findShow(id) {
+    return shows.find((s) => s.id === id) || null;
+  }
+
+  function renderShows() {
+    $('#btn-play-all').disabled = !shows.length;
+    $('#btn-export').disabled = !shows.length;
+    $('#show-list').innerHTML = shows.length ? shows.map((show) => {
+      const id = esc(show.id);
+      const isCurrent = player.show && player.show.id === show.id;
+      const active = isCurrent && (player.playing || player.countdown);
+      return `<div class="show${isCurrent ? ' playing' : ''}">
+        <div class="show-head"><span class="name">${esc(show.name)}</span>
+          <span class="hint">${fmtTime(show.duration)} · ${fmtDate(new Date(show.created))}</span></div>
+        <canvas class="ribbon" data-ribbon="${id}"></canvas>
+        <div class="row">
+          <button data-show-play="${id}">${active ? '❚❚ Pause' : '▶ Play'}</button>
+          <button class="secondary" data-show-rename="${id}">Rename</button>
+          <button class="secondary" data-show-delete="${id}">Delete</button>
+        </div>
+      </div>`;
+    }).join('') : '<p class="empty">No shows yet. Press ● Record in the Colour tab, play with the colours, then save.</p>';
+    const kb = JSON.stringify(shows).length / 1024;
+    $('#show-storage').textContent = shows.length
+      ? `${shows.length.toLocaleString()} show${shows.length === 1 ? '' : 's'} · ${Math.ceil(kb).toLocaleString()} KB used`
+      : '';
+    requestAnimationFrame(drawAllRibbons);
+  }
+
+  // Colour ribbon: the show's colours left to right (darker where dimmed, black when off),
+  // with brightness drawn as a white line and an optional playhead.
+  function drawRibbon(canvas, show, playhead) {
+    const w = canvas.clientWidth;
+    const ht = canvas.clientHeight;
+    const ctx = w && ht && canvas.getContext ? canvas.getContext('2d') : null;
+    if (!ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(ht * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(ht * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, ht);
+    const ev = show.events;
+    const cols = Math.max(1, Math.round(w));
+    const ys = [];
+    let i = 0;
+    for (let x = 0; x < cols; x++) {
+      const t = ((x + 0.5) / cols) * show.duration;
+      while (i + 1 < ev.length && ev[i + 1][0] <= t) i++;
+      const [, hue, sat, b] = ev[i];
+      ctx.fillStyle = b ? rgbToHex(hsvToRgb(hue, sat / 1000, 0.3 + 0.7 * (b / 100))) : '#000';
+      ctx.fillRect(x, 0, 1.5, ht);
+      ys.push(ht - 3 - (b / 100) * (ht - 6));
+    }
+    ctx.beginPath();
+    ys.forEach((y, x) => (x ? ctx.lineTo(x + 0.5, y) : ctx.moveTo(0.5, y)));
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0, 0, 0, .55)';
+    ctx.stroke();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
+    if (playhead != null) {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(Math.min(w - 2, Math.max(0, (playhead / show.duration) * w - 1)), 0, 2, ht);
+    }
+  }
+
+  function drawAllRibbons() {
+    document.querySelectorAll('canvas[data-ribbon]').forEach((canvas) => {
+      const show = findShow(canvas.dataset.ribbon);
+      if (show) drawRibbon(canvas, show, null);
+    });
+    if (player.show) drawRibbon($('#np-ribbon'), player.show, player.pos);
+  }
+
+  function renameShow(id) {
+    const show = findShow(id);
+    if (!show) return;
+    const name = window.prompt('Rename show', show.name);
+    if (name === null || !name.trim()) return;
+    show.name = name.trim().slice(0, 80);
+    persistShows();
+    renderShows();
+    updateNowPlaying();
+  }
+
+  function deleteShow(id) {
+    const show = findShow(id);
+    if (!show || !window.confirm(`Delete "${show.name}"? This can't be undone.`)) return;
+    if (player.show && player.show.id === id) {
+      stopPlayer();
+    } else if (player.queue.includes(id)) {
+      player.queue = player.queue.filter((x) => x !== id);
+      player.index = player.queue.indexOf(player.show.id);
+    }
+    shows = shows.filter((s) => s.id !== id);
+    persistShows();
+    renderShows();
+    updateNowPlaying();
+    log(`Deleted show "${show.name}".`);
+  }
+
+  function exportShows() {
+    const data = JSON.stringify({ app: 'led-lights', version: 1, exported: new Date().toISOString(), shows });
+    const url = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `light-shows-${fmtDate(new Date()).replace(/\//g, '-')}.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    log(`Exported ${shows.length.toLocaleString()} show(s).`, 'ok');
+  }
+
+  async function importShows(file) {
+    if (file.size > 20 * 1024 * 1024) {
+      log('Import: that file is too large to be a shows backup.', 'err');
+      return;
+    }
+    try {
+      const parsed = JSON.parse(await file.text());
+      const incoming = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.shows) ? parsed.shows : []);
+      const cleaned = incoming.map(cleanShow).filter(Boolean);
+      const before = shows;
+      const ids = new Set(shows.map((s) => s.id));
+      const added = cleaned.filter((s) => !ids.has(s.id) && ids.add(s.id));
+      shows = [...shows, ...added].sort((a, b) => b.created - a.created);
+      if (!persistShows()) {
+        shows = before;
+        return;
+      }
+      const skipped = cleaned.length - added.length;
+      log(`Imported ${added.length.toLocaleString()} show(s)${skipped ? `, skipped ${skipped.toLocaleString()} already in the library` : ''}.`, 'ok');
+      renderShows();
+    } catch (err) {
+      log(`Import failed: ${err.message}`, 'err');
+    }
+  }
+
+  // ---- Playback ----
+
+  function mixState(a, b, f) {
+    const dh = ((b.h - a.h + 540) % 360) - 180; // the short way round the wheel
+    return { h: (a.h + dh * f + 360) % 360, s: a.s + (b.s - a.s) * f, b: a.b + (b.b - a.b) * f };
+  }
+
+  function stateAt(show, t, smoothing) {
+    if (smoothing === 'extra' && player.samples && player.show === show) {
+      return player.samples[Math.min(player.samples.length - 1, Math.max(0, Math.round(t / 50)))];
+    }
+    const ev = show.events;
+    let lo = 0;
+    let hi = ev.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (ev[mid][0] <= t) lo = mid;
+      else hi = mid - 1;
+    }
+    const toState = (e) => ({ h: e[1], s: e[2] / 1000, b: e[3] });
+    const cur = toState(ev[lo]);
+    if (smoothing === 'exact' || lo === 0) return cur;
+    // Smooth: fade from the previous state into this one, over at most FADE_MS.
+    const gap = lo + 1 < ev.length ? ev[lo + 1][0] - ev[lo][0] : Infinity;
+    const fade = Math.min(FADE_MS, gap);
+    return mixState(toState(ev[lo - 1]), cur, fade > 0 ? Math.min(1, (t - ev[lo][0]) / fade) : 1);
+  }
+
+  // Extra smooth: the Smooth curve sampled every 50 ms, then averaged over about 1 second.
+  // Hue is averaged as an angle, weighted by saturation, so near-white moments don't pull it around.
+  function buildExtraSmooth(show) {
+    const n = Math.floor(show.duration / 50) + 1;
+    const base = Array.from({ length: n }, (_, i) => stateAt(show, i * 50, 'smooth'));
+    const half = 10;
+    return base.map((_, i) => {
+      let x = 0;
+      let y = 0;
+      let s = 0;
+      let b = 0;
+      let count = 0;
+      for (let j = Math.max(0, i - half); j <= Math.min(n - 1, i + half); j++) {
+        const p = base[j];
+        const rad = (p.h * Math.PI) / 180;
+        x += Math.cos(rad) * (p.s + 0.001);
+        y += Math.sin(rad) * (p.s + 0.001);
+        s += p.s;
+        b += p.b;
+        count++;
+      }
+      return { h: ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360, s: s / count, b: b / count };
+    });
+  }
+
+  // Sends the show's state for this moment, only what changed. Brightness 0 switches the lights off.
+  function applyShowState(state) {
+    const pct = Math.round(state.b);
+    const on = pct > 0;
+    const last = player.last || (player.last = {});
+    if (on !== last.on) {
+      sendToAll('power', (p) => p.power(on), true);
+      poweredOff = !on;
+    }
+    if (on) {
+      const fresh = last.on !== true;
+      const hueMoved = fresh || Math.abs(((state.h - last.h + 540) % 360) - 180) >= 1;
+      if (hueMoved || Math.abs(state.s - last.s) >= 0.01) {
+        setColorAll(state.h, state.s, true);
+        last.h = state.h;
+        last.s = state.s;
+      }
+      if (fresh || pct !== last.b) {
+        sendToAll('brightness', (p) => p.brightness(pct), true);
+        last.b = pct;
+      }
+    }
+    last.on = on;
+    showColour(state.h, state.s);
+    setBrightnessUi(pct);
+  }
+
+  function loadIntoPlayer(index) {
+    const show = findShow(player.queue[index]);
+    if (!show) {
+      stopPlayer();
+      return false;
+    }
+    player.index = index;
+    player.show = show;
+    player.samples = settings.smoothing === 'extra' ? buildExtraSmooth(show) : null;
+    player.pos = 0;
+    player.last = null;
+    return true;
+  }
+
+  // Starts a list of shows after a 3-2-1 countdown, so the song can be started at the same moment.
+  function playQueue(ids) {
+    stopPlayer();
+    player.queue = ids;
+    if (!loadIntoPlayer(0)) return;
+    runCountdown(3);
+    renderShows();
+    updateNowPlaying();
+  }
+
+  function runCountdown(n) {
+    $('#np-countdown').textContent = `Starting in ${n}…`;
+    player.countdown = setTimeout(() => {
+      if (n > 1) {
+        runCountdown(n - 1);
+        return;
+      }
+      player.countdown = null;
+      $('#np-countdown').textContent = '';
+      startPlayback();
+    }, 1000);
+  }
+
+  function startPlayback() {
+    if (!player.show) return;
+    enterMode('show');
+    markActive(null);
+    if (player.pos >= player.show.duration) player.pos = 0;
+    player.playing = true;
+    player.last = null;
+    player.startedAt = performance.now() - player.pos / settings.speed;
+    clearInterval(player.timer);
+    player.timer = setInterval(playerTick, 50);
+    keepAwake();
+    playerTick();
+    renderShows();
+    log(`Playing "${player.show.name}".`);
+  }
+
+  function pausePlayer() {
+    if (player.countdown) {
+      clearTimeout(player.countdown);
+      player.countdown = null;
+      $('#np-countdown').textContent = '';
+    } else if (!player.playing) {
+      return;
+    }
+    clearInterval(player.timer);
+    player.playing = false;
+    releaseAwake();
+    renderShows();
+    updateNowPlaying();
+  }
+
+  function stopPlayer() {
+    pausePlayer();
+    player.show = null;
+    player.queue = [];
+    player.pos = 0;
+    if (mode === 'show') {
+      mode = 'colour';
+      queueRender();
+    }
+    renderShows();
+    updateNowPlaying();
+  }
+
+  function playerTick() {
+    const show = player.show;
+    if (!show) return;
+    player.pos = Math.min(show.duration, (performance.now() - player.startedAt) * settings.speed);
+    applyShowState(stateAt(show, player.pos, settings.smoothing));
+    updateNowPlaying();
+    if (player.pos >= show.duration) showEnded();
+  }
+
+  function showEnded() {
+    let next = player.index + 1;
+    if (next >= player.queue.length) {
+      if (!settings.repeat) {
+        log(`Finished "${player.show.name}".`);
+        stopPlayer();
+        return;
+      }
+      next = 0;
+    }
+    if (!loadIntoPlayer(next)) return;
+    player.startedAt = performance.now();
+    renderShows();
+  }
+
+  function toggleShow(id) {
+    if (player.show && player.show.id === id) {
+      if (player.playing || player.countdown) pausePlayer();
+      else startPlayback();
+      return;
+    }
+    playQueue([id]);
+  }
+
+  function seekTo(pos) {
+    if (!player.show || !Number.isFinite(pos)) return;
+    player.pos = Math.min(player.show.duration, Math.max(0, pos));
+    player.last = null;
+    if (player.playing) player.startedAt = performance.now() - player.pos / settings.speed;
+    updateNowPlaying();
+  }
+
+  function updateNowPlaying() {
+    if (!player.show) {
+      $('#now-playing').hidden = true;
+      return;
+    }
+    $('#now-playing').hidden = false;
+    $('#np-name').textContent = player.queue.length > 1
+      ? `${player.show.name} (${(player.index + 1).toLocaleString()} of ${player.queue.length.toLocaleString()})`
+      : player.show.name;
+    $('#np-time').textContent = `${fmtTime(player.pos)} / ${fmtTime(player.show.duration)}`;
+    $('#btn-np-toggle').textContent = player.playing || player.countdown ? '❚❚ Pause' : '▶ Play';
+    drawRibbon($('#np-ribbon'), player.show, player.pos);
+  }
+
+  function setupShows() {
+    $('#opt-smooth').value = settings.smoothing;
+    $('#opt-speed').value = String(settings.speed);
+    $('#opt-repeat').checked = settings.repeat;
+    $('#opt-smooth').addEventListener('change', (e) => {
+      settings.smoothing = e.target.value;
+      saveSettings();
+      if (player.show) {
+        player.samples = settings.smoothing === 'extra' ? buildExtraSmooth(player.show) : null;
+        player.last = null;
+      }
+    });
+    $('#opt-speed').addEventListener('change', (e) => {
+      settings.speed = Number(e.target.value);
+      saveSettings();
+      if (player.playing) player.startedAt = performance.now() - player.pos / settings.speed;
+    });
+    $('#opt-repeat').addEventListener('change', (e) => {
+      settings.repeat = e.target.checked;
+      saveSettings();
+    });
+    $('#btn-record').addEventListener('click', () => (recorder.active ? stopRecording() : startRecording()));
+    $('#btn-rec-save').addEventListener('click', saveRecording);
+    $('#btn-rec-discard').addEventListener('click', discardRecording);
+    $('#btn-play-all').addEventListener('click', () => playQueue(shows.map((s) => s.id)));
+    $('#btn-np-toggle').addEventListener('click', () => (player.playing || player.countdown ? pausePlayer() : startPlayback()));
+    $('#btn-np-stop').addEventListener('click', stopPlayer);
+    $('#np-ribbon').addEventListener('click', (e) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      if (player.show && rect.width) seekTo(((e.clientX - rect.left) / rect.width) * player.show.duration);
+    });
+    $('#show-list').addEventListener('click', (e) => {
+      const play = e.target.closest('[data-show-play]');
+      const rename = e.target.closest('[data-show-rename]');
+      const del = e.target.closest('[data-show-delete]');
+      if (play) toggleShow(play.dataset.showPlay);
+      if (rename) renameShow(rename.dataset.showRename);
+      if (del) deleteShow(del.dataset.showDelete);
+    });
+    $('#btn-export').addEventListener('click', exportShows);
+    $('#btn-import').addEventListener('click', () => $('#import-file').click());
+    $('#import-file').addEventListener('change', (e) => {
+      const [file] = e.target.files;
+      e.target.value = '';
+      if (file) importShows(file);
+    });
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(drawAllRibbons, 150);
+    });
+    renderShows();
   }
 
   $('#btn-all-on').addEventListener('click', () => setPowerAll(true));
@@ -1320,12 +2072,7 @@
     pickColour(h, s);
     log(`Colour set to ${b.title}.`);
   });
-  $('#brightness').addEventListener('input', (e) => {
-    const pct = Number(e.target.value);
-    $('#brightness-value').textContent = `${pct.toFixed(1)}%`;
-    // While the phone mic is listening, the slider sets the maximum and the listener sends it.
-    if (mode !== 'phonemic') sendToAll('brightness', (p) => p.brightness(pct));
-  });
+  $('#brightness').addEventListener('input', (e) => applyBrightness(Number(e.target.value)));
   $('#speed').addEventListener('input', (e) => {
     const v = Number(e.target.value);
     $('#speed-value').textContent = v;
@@ -1372,9 +2119,10 @@
 
   buildChips();
   setupWheel();
+  setupShows();
   let savedTab = null;
   try { savedTab = localStorage.getItem(TAB_KEY); } catch { /* fall back to the first tab */ }
-  showTab(['colour', 'scenes', 'music'].includes(savedTab) ? savedTab : 'colour');
+  showTab(TABS.includes(savedTab) ? savedTab : 'colour');
   init();
 </script>
 </body>
