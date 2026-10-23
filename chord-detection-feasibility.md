@@ -43,3 +43,7 @@ Very unlikely. The analysis runs on small, fixed-size audio buffers, in a backgr
 
 1. **Phase 1:** live chord display plus a "Chord colours" pattern, using Meyda and Tonal. These are small and MIT-licensed.
 2. **Phase 2:** recognise songs for your saved shows with Olaf, only if Phase 1 turns out accurate enough in your room.
+
+## Update 10/23/26: what was built
+
+Both phases are built, without any of the libraries above. The note profile, chord matching and song fingerprints are written directly in the page, so it stays a single file with no downloads and no AGPL code. Song matching compares 8 s of note profiles against each remembered song, rather than using Shazam-style spectral peaks. That's simpler, and good enough for a small personal list of songs. In simulated tests it recognised a song after about 9 s and started the replay within 0.2 s of the real position. The thresholds will probably need tuning once it's tried with real music in a real room.
