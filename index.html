@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My LED Lights</title>
+  <style>
+    :root {
+      --bg: #0f1115; --panel: #181b22; --border: #2a2f3a;
+      --text: #e6e8ee; --muted: #9aa3b2;
+      --accent: #4f8cff; --ok: #3ecf8e; --warn: #f5a524; --err: #f04f5f;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; }
+    h1 { font-size: 1.4rem; margin: 0 0 4px; }
+    h2 { font-size: 1rem; margin: 0 0 12px; }
+    .sub { color: var(--muted); margin: 0 0 20px; }
+    section { background: var(--panel); border: 1px solid var(--border);
+              border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    section.banner { border-color: var(--warn); }
+    section.banner h2 { color: var(--warn); }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    button { font: inherit; border: 0; border-radius: 8px; padding: 10px 14px;
+             background: var(--accent); color: #fff; cursor: pointer; }
+    button.secondary { background: var(--border); }
+    button.link { background: none; color: var(--muted); padding: 6px 4px; font-size: .85rem; text-decoration: underline; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    input { font: inherit; width: 100%; padding: 8px 10px; border-radius: 8px;
+            border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+    input[type=color] { width: 56px; height: 44px; padding: 2px; cursor: pointer; }
+    input[type=range] { padding: 0; border: 0; background: none; accent-color: var(--accent); flex: 1; min-width: 160px; }
+    label { display: block; color: var(--muted); font-size: .85rem; margin: 12px 0 4px; }
+    code { word-break: break-all; }
+    ul.checks { list-style: none; padding: 0; margin: 0 0 12px; }
+    ul.checks li { padding: 4px 0; }
+    .dot { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%;
+           margin-right: 8px; background: var(--muted); }
+    .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--err); }
+    .hint { color: var(--muted); font-size: .85rem; }
+    .light { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+             border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 10px; }
+    .light .info { flex: 1; min-width: 160px; display: flex; align-items: center; }
+    .light .name { font-weight: 600; word-break: break-word; }
+    .light .status { color: var(--muted); font-size: .8rem; }
+    .device { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 10px; }
+    .device .name { font-weight: 600; word-break: break-word; }
+    .device .meta { color: var(--muted); font-size: .8rem; word-break: break-all; margin: 4px 0 8px; }
+    .badge { display: inline-block; font-size: .72rem; padding: 2px 8px; border-radius: 999px;
+             background: var(--border); color: var(--text); margin-left: 6px; vertical-align: middle; }
+    .badge.led { background: #3a2f12; color: var(--warn); }
+    .badge.ok { background: #12392a; color: var(--ok); }
+    .badge.brand { background: #1c2c4d; color: #9cbcff; }
+    .services { margin: 8px 0 0; padding-left: 18px; font: 12px/1.5 ui-monospace, Menlo, monospace; }
+    .services ul { padding-left: 16px; color: var(--muted); }
+    .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+    .swatch { width: 40px; height: 40px; padding: 0; border-radius: 50%; border: 2px solid var(--border); }
+    .control-group { margin-top: 14px; }
+    #brightness-value { min-width: 56px; text-align: right; font-variant-numeric: tabular-nums; }
+    pre#log { margin: 0; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+              font: 12px/1.5 ui-monospace, Menlo, monospace; color: var(--muted); }
+    pre#log .ok { color: var(--ok); } pre#log .warn { color: var(--warn); } pre#log .err { color: var(--err); }
+    details > summary { cursor: pointer; font-weight: 600; }
+    details[open] > summary { margin-bottom: 12px; }
+    details ol { padding-left: 20px; margin-bottom: 0; }
+    details li { margin-bottom: 6px; }
+    .empty { color: var(--muted); font-size: .9rem; margin-top: 10px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>My LED Lights</h1>
+  <p class="sub">LotusLamp X and MR Star strips, controlled together.</p>
+
+  <section id="setup-banner" class="banner" hidden>
+    <h2>One-time setup to auto-connect</h2>
+    <p id="setup-reason">This Chrome can't remember lights between visits yet, so you'd have to add them again after every refresh.</p>
+    <ol>
+      <li>Open this page from its <code>https://</code> link, not from a downloaded or shared file.</li>
+      <li>Open <code>chrome://flags/#enable-experimental-web-platform-features</code> in a new tab and set it to <b>Enabled</b>.
+        <button class="secondary" data-copy="chrome://flags/#enable-experimental-web-platform-features">Copy</button></li>
+      <li>Do the same for <code>chrome://flags/#enable-web-bluetooth-new-permissions-backend</code>.
+        <button class="secondary" data-copy="chrome://flags/#enable-web-bluetooth-new-permissions-backend">Copy</button></li>
+      <li>Press <b>Relaunch</b>, come back here and add each light once. After that they connect automatically.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>All lights</h2>
+    <p id="targets" class="hint">No lights connected yet.</p>
+    <div class="row">
+      <button id="btn-all-on" disabled>All on</button>
+      <button id="btn-all-off" class="secondary" disabled>All off</button>
+    </div>
+    <div class="control-group">
+      <label for="color">Colour</label>
+      <div class="row">
+        <input id="color" type="color" value="#ff0000" disabled>
+        <div id="swatches" class="swatches"></div>
+      </div>
+      <p class="hint">Every light gets the same hue and saturation. Use the brightness slider for darker or lighter.</p>
+    </div>
+    <div class="control-group">
+      <label for="brightness">Brightness</label>
+      <div class="row">
+        <input id="brightness" type="range" min="1" max="100" value="100" disabled>
+        <span id="brightness-value">100.0%</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Lights</h2>
+    <div id="lights"></div>
+    <div class="row" style="margin-top: 12px">
+      <button id="btn-add">+ Add a light</button>
+    </div>
+  </section>
+
+  <section>
+    <details>
+      <summary>Diagnostics</summary>
+      <ul class="checks">
+        <li id="chk-secure"><span class="dot"></span><span class="txt">Secure context…</span></li>
+        <li id="chk-api"><span class="dot"></span><span class="txt">Web Bluetooth API…</span></li>
+        <li id="chk-adapter"><span class="dot"></span><span class="txt">Bluetooth adapter…</span></li>
+        <li id="chk-remember"><span class="dot"></span><span class="txt">Remembering devices…</span></li>
+        <li id="chk-scan"><span class="dot"></span><span class="txt">Passive scanning API…</span></li>
+      </ul>
+      <div class="row">
+        <button id="btn-pick" class="secondary">Pick any device</button>
+        <button id="btn-scan" class="secondary" disabled>Start passive scan</button>
+        <button id="btn-clear-log" class="secondary">Clear log</button>
+      </div>
+      <label for="extra-uuids">Extra service UUIDs to request (optional, comma separated, e.g. <code>ffb0, ae00</code>)</label>
+      <input id="extra-uuids" placeholder="fff0, ffe0, …" autocomplete="off" spellcheck="false">
+      <div id="devices"><p class="empty">No devices yet.</p></div>
+      <h2 style="margin-top: 16px">Log</h2>
+      <pre id="log"></pre>
+    </details>
+  </section>
+
+  <section>
+    <details>
+      <summary>A light won't show up or connect?</summary>
+      <ol>
+        <li><b>Free the lights from your phone.</b> These controllers accept only one connection at a time. Turn Bluetooth <i>off</i> on the phone running the vendor apps, then unplug and replug the light.</li>
+        <li><b>macOS:</b> System Settings → Privacy &amp; Security → Bluetooth → allow Google Chrome, then fully quit and reopen Chrome.</li>
+        <li><b>Open the page over <code>http://localhost</code> or <code>https://</code>.</b> Web Bluetooth is blocked on plain <code>http://</code> LAN addresses.</li>
+        <li><b>Use Chrome or Edge.</b> Safari, Firefox and iOS browsers do not support Web Bluetooth.</li>
+        <li><b>Lights don't come back after a refresh:</b> make sure both flags in the setup box are enabled and the page is opened from its <code>https://</code> link.</li>
+        <li><b>Android:</b> allow Chrome the "Nearby devices" permission and keep Location turned on.</li>
+      </ol>
+    </details>
+  </section>
+</main>
+
+<script>
+  // Services we ask permission for up front. Chrome only lets the page read services
+  // listed here, so it covers the common cheap LED controllers.
+  const LED_SERVICES = {
+    fff0: 'LotusLamp X / MR Star LED service',
+    ffe0: 'HM-10 style UART',
+    ffe5: 'Magic Home / Triones',
+    ffd0: 'Triones / HappyLighting',
+    ffd5: 'Triones / HappyLighting',
+    ff00: 'Generic vendor',
+    ffb0: 'Generic vendor',
+    fe00: 'Generic vendor',
+    ae00: 'RGBIC controller',
+    a950: 'Generic vendor',
+    '180a': 'Device Information',
+  };
+  const LED_NAME_HINT = /ELK|BLEDOM|MELK|LEDBLE|LED|LIGHT|LAMP|STRIP|STAR|TRIONES|QHM|KS0\d|GATT--DEMO/i;
+  const BASE_UUID_TAIL = '-0000-1000-8000-00805f9b34fb';
+  const CONNECT_TIMEOUT_MS = 15000;
+  const MAX_RETRY_MS = 30000;
+  // Set once a light has been added on this site, so an empty getDevices() after a
+  // refresh can be recognised as "Chrome forgot them" rather than "first visit".
+  const PAIRED_KEY = 'led-lights-paired-before';
+
+  // Both brands write to characteristic fff3 inside service fff0, but speak different byte formats.
+  // LotusLamp X bytes come from the elkbledom Home Assistant integration (MELK-OA10 model),
+  // MR Star bytes from the homey-mrstar Homey app.
+  const PROTOCOLS = {
+    lotus: {
+      label: 'LotusLamp X',
+      filters: [{ namePrefix: 'MELK' }, { namePrefix: 'ELK-' }],
+      match: (name) => /^(MELK|ELK-)/i.test(name),
+      power: (on) => on
+        ? [0x7e, 0x04, 0x04, 0xf0, 0x00, 0x01, 0xff, 0x00, 0xef]
+        : [0x7e, 0x04, 0x04, 0x00, 0x00, 0x00, 0xff, 0x00, 0xef],
+      color: (h, s) => [0x7e, 0x00, 0x05, 0x03, ...hsvToRgb(h, s, 1), 0x00, 0xef],
+      brightness: (pct) => [0x7e, 0x04, 0x01, pct, 0x01, 0xff, 0xff, 0x00, 0xef],
+    },
+    mrstar: {
+      label: 'MR Star',
+      filters: [{ namePrefix: 'GATT--DEMO' }],
+      match: (name) => /GATT--DEMO/i.test(name),
+      power: (on) => [0xbc, 0x01, 0x01, on ? 0x01 : 0x00, 0x55],
+      color: (h, s) => {
+        const hue = Math.round(h) % 360;
+        const sat = Math.round(s * 1000);
+        return [0xbc, 0x04, 0x06, hue >> 8, hue & 0xff, sat >> 8, sat & 0xff, 0x00, 0x00, 0x55];
+      },
+      brightness: (pct) => {
+        const raw = Math.max(3, pct * 10);
+        return [0xbc, 0x05, 0x06, raw >> 8, raw & 0xff, 0x00, 0x00, 0x00, 0x00, 0x55];
+      },
+    },
+  };
+
+  const PRESETS = [
+    ['Red', 0, 1], ['Orange', 25, 1], ['Yellow', 50, 1], ['Green', 120, 1], ['Cyan', 180, 1],
+    ['Blue', 240, 1], ['Purple', 275, 1], ['Pink', 320, 0.7], ['White', 0, 0],
+  ];
+
+  const STATUS_TEXT = {
+    connected: ['ok', 'Connected'],
+    connecting: ['warn', 'Connecting…'],
+    waiting: ['warn', 'Not reachable, retrying…'],
+    idle: ['err', 'Not connected'],
+  };
+
+  const $ = (sel) => document.querySelector(sel);
+  const devices = new Map();
+  let activeScan = null;
+  let renderQueued = false;
+
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function shortUuid(uuid) {
+    const m = /^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/i.exec(uuid);
+    return m ? m[1].toLowerCase() : uuid;
+  }
+
+  function describeUuid(uuid) {
+    const s = shortUuid(uuid);
+    return LED_SERVICES[s] ? `0x${s} (${LED_SERVICES[s]})` : (s.length === 4 ? `0x${s}` : s);
+  }
+
+  function hex(bytes) {
+    return bytes.map((b) => b.toString(16).padStart(2, '0')).join(' ');
+  }
+
+  function hexToHsv(color) {
+    const n = parseInt(color.slice(1), 16);
+    const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+    const max = Math.max(r, g, b), delta = max - Math.min(r, g, b);
+    let h = 0;
+    if (delta) {
+      if (max === r) h = ((g - b) / delta) % 6;
+      else if (max === g) h = (b - r) / delta + 2;
+      else h = (r - g) / delta + 4;
+      h = (h * 60 + 360) % 360;
+    }
+    return { h, s: max ? delta / max : 0 };
+  }
+
+  function hsvToRgb(h, s, v) {
+    const f = (n) => {
+      const k = (n + h / 60) % 6;
+      return Math.round(255 * (v - v * s * Math.max(0, Math.min(k, 4 - k, 1))));
+    };
+    return [f(5), f(3), f(1)];
+  }
+
+  function rgbToHex([r, g, b]) {
+    return `#${[r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  function nameOf(d) {
+    return (d.device.name || d.advName || 'unnamed device').replace(/\s+/g, ' ');
+  }
+
+  function log(msg, level = '') {
+    const t = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const line = document.createElement('div');
+    line.className = level;
+    line.textContent = `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}  ${msg}`;
+    $('#log').prepend(line);
+  }
+
+  function showSetup(reason) {
+    $('#setup-reason').textContent = reason;
+    $('#setup-banner').hidden = false;
+  }
+
+  function pairedBefore() {
+    try { return localStorage.getItem(PAIRED_KEY) === '1'; } catch { return false; }
+  }
+
+  function setPairedBefore(value) {
+    try {
+      if (value) localStorage.setItem(PAIRED_KEY, '1');
+      else localStorage.removeItem(PAIRED_KEY);
+    } catch {
+      // Storage blocked (private window etc.): only the setup hint is affected.
+    }
+  }
+
+  function setCheck(id, state, text) {
+    const li = $(`#chk-${id}`);
+    li.querySelector('.dot').className = `dot ${state}`;
+    li.querySelector('.txt').textContent = text;
+  }
+
+  function requestedServices() {
+    const extra = $('#extra-uuids').value.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+    const all = [...Object.keys(LED_SERVICES), ...extra].map((s) => {
+      if (/^(0x)?[0-9a-f]{4}$/.test(s)) return `0000${s.replace(/^0x/, '')}${BASE_UUID_TAIL}`;
+      if (/^(0x)?[0-9a-f]{8}$/.test(s)) return `${s.replace(/^0x/, '')}${BASE_UUID_TAIL}`;
+      return s;
+    });
+    return [...new Set(all)];
+  }
+
+  function detectProtocol(name) {
+    return Object.keys(PROTOCOLS).find((key) => PROTOCOLS[key].match(name || '')) || null;
+  }
+
+  function upsert(device, info) {
+    const prev = devices.get(device.id) || { device, sources: new Set(), status: 'idle', services: null };
+    prev.device = info.source === 'picked' ? device : prev.device;
+    prev.sources.add(info.source);
+    if (info.name) prev.advName = info.name;
+    if (info.rssi != null) prev.rssi = info.rssi;
+    if (info.uuids && info.uuids.length) prev.uuids = info.uuids;
+    prev.protocol = detectProtocol(prev.device.name || prev.advName);
+    devices.set(device.id, prev);
+    queueRender();
+    return prev;
+  }
+
+  function lights() {
+    return [...devices.values()].filter((d) => d.protocol && d.sources.has('picked'));
+  }
+
+  function controllable() {
+    return lights().filter((d) => d.status === 'connected' && d.writeChar);
+  }
+
+  function queueRender() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(() => { renderQueued = false; render(); });
+  }
+
+  function render() {
+    renderControls();
+    renderLights();
+    renderDiagnostics();
+  }
+
+  function renderControls() {
+    const all = lights();
+    const targets = controllable();
+    $('#targets').textContent = all.length
+      ? `${targets.length.toLocaleString()} of ${all.length.toLocaleString()} light${all.length === 1 ? '' : 's'} connected`
+      : 'No lights added yet. Use "+ Add a light" below.';
+    ['#btn-all-on', '#btn-all-off', '#color', '#brightness'].forEach((sel) => { $(sel).disabled = !targets.length; });
+    $('#swatches').querySelectorAll('button').forEach((b) => { b.disabled = !targets.length; });
+  }
+
+  function renderLights() {
+    const list = lights().sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+    if (!list.length) {
+      $('#lights').innerHTML = '<p class="empty">No lights yet. Add each light once and it will be remembered.</p>';
+      return;
+    }
+    $('#lights').innerHTML = list.map((d) => {
+      const id = esc(d.device.id);
+      const [dot, text] = STATUS_TEXT[d.status];
+      let buttons;
+      if (d.status === 'connected' && d.writeChar) {
+        buttons = `<button data-power="on" data-id="${id}">On</button>
+                   <button class="secondary" data-power="off" data-id="${id}">Off</button>`;
+      } else if (d.status === 'idle' || d.status === 'waiting') {
+        buttons = `<button class="secondary" data-connect="${id}">Connect now</button>`;
+      } else {
+        buttons = '';
+      }
+      return `<div class="light">
+        <div class="info"><span class="dot ${dot}"></span>
+          <div><div class="name">${esc(nameOf(d))}<span class="badge brand">${esc(PROTOCOLS[d.protocol].label)}</span></div>
+          <div class="status">${text}</div></div></div>
+        <div class="row">${buttons}<button class="link" data-forget="${id}">Forget</button></div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderDiagnostics() {
+    const box = $('#devices');
+    if (!devices.size) { box.innerHTML = '<p class="empty">No devices yet.</p>'; return; }
+    const list = [...devices.entries()].sort(([, a], [, b]) =>
+      (b.sources.has('picked') - a.sources.has('picked')) || ((b.rssi ?? -999) - (a.rssi ?? -999)));
+    box.innerHTML = list.map(([id, d]) => {
+      const name = d.device.name || d.advName || '';
+      const picked = d.sources.has('picked');
+      const badges = [
+        picked ? '<span class="badge ok">picked</span>' : '',
+        d.sources.has('scan') ? '<span class="badge">scan</span>' : '',
+        d.protocol ? `<span class="badge brand">${esc(PROTOCOLS[d.protocol].label)}</span>`
+          : (LED_NAME_HINT.test(name) ? '<span class="badge led">possible LED</span>' : ''),
+      ].join('');
+      const meta = [
+        `id ${esc(id)}`,
+        d.rssi != null ? `RSSI ${d.rssi} dBm` : '',
+        d.uuids ? `advertises ${d.uuids.map((u) => esc(describeUuid(u))).join(', ')}` : '',
+      ].filter(Boolean).join(' · ');
+      let buttons = '';
+      if (picked && d.status === 'connected') {
+        buttons = `<button class="secondary" data-disconnect="${esc(id)}">Disconnect</button>`;
+      } else if (picked && d.status !== 'connecting') {
+        buttons = `<button class="secondary" data-connect="${esc(id)}">Connect &amp; list services</button>`;
+      }
+      if (picked) buttons += `<button class="link" data-forget="${esc(id)}">Forget</button>`;
+      const services = d.services
+        ? (d.services.length
+            ? `<ul class="services">${d.services.map((s) => `<li>${esc(describeUuid(s.uuid))}<ul>${
+                s.chars.map((c) => `<li>${esc(describeUuid(c.uuid))} [${esc(c.props.join(', '))}]</li>`).join('')
+              }</ul></li>`).join('')}</ul>`
+            : '<p class="hint">Connected, but none of the requested services exist on this device. Add its service UUID above and pick it again.</p>')
+        : '';
+      return `<div class="device">
+        <div class="name">${name ? esc(name) : '<i>unnamed device</i>'}${badges}</div>
+        <div class="meta">${meta}</div>
+        <div class="row">${buttons}</div>
+        ${services}
+      </div>`;
+    }).join('');
+  }
+
+  // Each device gets one write at a time (Web Bluetooth rejects overlapping GATT writes).
+  // Repeated commands of the same kind collapse to the latest, so dragging a slider
+  // does not build up a backlog.
+  function send(d, kind, bytes) {
+    d.pending = d.pending || new Map();
+    d.pending.delete(kind);
+    d.pending.set(kind, bytes);
+    if (!d.flushing) flush(d);
+  }
+
+  async function flush(d) {
+    d.flushing = true;
+    try {
+      while (d.pending && d.pending.size && d.writeChar) {
+        const [kind, bytes] = d.pending.entries().next().value;
+        d.pending.delete(kind);
+        const data = new Uint8Array(bytes);
+        try {
+          if (d.writeChar.properties.writeWithoutResponse) await d.writeChar.writeValueWithoutResponse(data);
+          else await d.writeChar.writeValue(data);
+          if (kind === 'power') log(`${nameOf(d)}: power command sent [${hex(bytes)}]`, 'ok');
+        } catch (err) {
+          log(`${nameOf(d)}: ${kind} write failed: ${err.name}: ${err.message}`, 'err');
+        }
+      }
+    } finally {
+      d.flushing = false;
+    }
+  }
+
+  function sendToAll(kind, build) {
+    controllable().forEach((d) => send(d, kind, build(PROTOCOLS[d.protocol])));
+  }
+
+  function setPowerAll(on) {
+    sendToAll('power', (p) => p.power(on));
+    log(`All lights ${on ? 'on' : 'off'}.`);
+  }
+
+  function setColorAll(h, s) {
+    sendToAll('color', (p) => p.color(h, s));
+  }
+
+  function setBrightnessAll(pct) {
+    $('#brightness-value').textContent = `${pct.toFixed(1)}%`;
+    sendToAll('brightness', (p) => p.brightness(pct));
+  }
+
+  function withTimeout(promise, ms) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`timed out after ${(ms / 1000).toLocaleString()} s`)), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  }
+
+  function propsOf(p) {
+    return ['read', 'write', 'writeWithoutResponse', 'notify', 'indicate'].filter((k) => p[k]);
+  }
+
+  function attachListeners(d) {
+    if (d.listening) return;
+    d.listening = true;
+    d.device.addEventListener('gattserverdisconnected', () => {
+      d.writeChar = null;
+      d.pending = null;
+      if (d.status === 'connected') log(`${nameOf(d)} disconnected.`, 'warn');
+      if (d.status === 'connecting') return;
+      d.status = 'idle';
+      if (d.wanted && d.protocol) scheduleReconnect(d);
+      queueRender();
+    });
+    // Only fires when watchAdvertisements() is supported: reconnect as soon as the light is heard again.
+    d.device.addEventListener('advertisementreceived', () => {
+      if (d.status !== 'waiting') return;
+      clearTimeout(d.retryTimer);
+      d.status = 'idle';
+      connect(d.device.id);
+    });
+  }
+
+  function scheduleReconnect(d) {
+    clearTimeout(d.retryTimer);
+    d.retryDelay = Math.min((d.retryDelay || 2000) * 2, MAX_RETRY_MS);
+    d.status = 'waiting';
+    d.retryTimer = setTimeout(() => {
+      d.status = 'idle';
+      connect(d.device.id);
+    }, d.retryDelay);
+    if (typeof d.device.watchAdvertisements === 'function' && !d.watchAbort) {
+      d.watchAbort = new AbortController();
+      d.device.watchAdvertisements({ signal: d.watchAbort.signal }).catch(() => { d.watchAbort = null; });
+    }
+    queueRender();
+  }
+
+  function stopWatching(d) {
+    if (d.watchAbort) d.watchAbort.abort();
+    d.watchAbort = null;
+  }
+
+  async function connect(id) {
+    const d = devices.get(id);
+    if (!d || d.status === 'connecting' || d.status === 'connected') return;
+    d.wanted = true;
+    clearTimeout(d.retryTimer);
+    d.status = 'connecting';
+    attachListeners(d);
+    queueRender();
+    try {
+      log(`Connecting to ${nameOf(d)}…`);
+      const server = await withTimeout(d.device.gatt.connect(), CONNECT_TIMEOUT_MS);
+      let services = [];
+      try {
+        services = await server.getPrimaryServices();
+      } catch (err) {
+        if (err.name !== 'NotFoundError') throw err;
+      }
+      d.services = [];
+      d.writeChar = null;
+      for (const s of services) {
+        const chars = await s.getCharacteristics().catch(() => []);
+        d.services.push({ uuid: s.uuid, chars: chars.map((c) => ({ uuid: c.uuid, props: propsOf(c.properties) })) });
+        if (shortUuid(s.uuid) === 'fff0') d.writeChar = chars.find((c) => shortUuid(c.uuid) === 'fff3') || null;
+      }
+      d.status = 'connected';
+      d.retryDelay = 0;
+      stopWatching(d);
+      log(`${nameOf(d)} connected.`, 'ok');
+      if (d.protocol && !d.writeChar) log(`${nameOf(d)} looks like ${PROTOCOLS[d.protocol].label} but has no fff3 characteristic.`, 'warn');
+    } catch (err) {
+      // Also aborts a connect() that is still hanging after the timeout.
+      d.device.gatt.disconnect();
+      d.status = 'idle';
+      log(`${nameOf(d)}: connect failed (${err.message})`, 'warn');
+      if (d.wanted && d.protocol) scheduleReconnect(d);
+    }
+    queueRender();
+  }
+
+  function disconnect(id) {
+    const d = devices.get(id);
+    d.wanted = false;
+    clearTimeout(d.retryTimer);
+    stopWatching(d);
+    if (d.device.gatt.connected) d.device.gatt.disconnect();
+    d.status = 'idle';
+    queueRender();
+  }
+
+  async function forget(id) {
+    const d = devices.get(id);
+    disconnect(id);
+    try {
+      if (typeof d.device.forget === 'function') await d.device.forget();
+    } catch (err) {
+      log(`Could not make Chrome forget ${nameOf(d)}: ${err.message}`, 'warn');
+    }
+    devices.delete(id);
+    if (!lights().length) setPairedBefore(false);
+    log(`Forgot ${nameOf(d)}.`);
+    queueRender();
+  }
+
+  async function addLight() {
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        filters: Object.values(PROTOCOLS).flatMap((p) => p.filters),
+        optionalServices: requestedServices(),
+      });
+      log(`Added ${device.name}.`, 'ok');
+      setPairedBefore(true);
+      upsert(device, { source: 'picked' });
+      connect(device.id);
+    } catch (err) {
+      if (err.name === 'NotFoundError') log('Picker closed without choosing a light.', 'warn');
+      else log(`${err.name}: ${err.message}`, 'err');
+    }
+  }
+
+  async function pickAnyDevice() {
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: requestedServices(),
+      });
+      upsert(device, { source: 'picked' });
+      log(`Picked "${device.name || 'unnamed'}" (${device.id})`, 'ok');
+    } catch (err) {
+      if (err.name === 'NotFoundError') log('Picker closed without choosing a device.', 'warn');
+      else log(`${err.name}: ${err.message}`, 'err');
+    }
+  }
+
+  async function toggleScan() {
+    if (activeScan) {
+      activeScan.stop();
+      activeScan = null;
+      $('#btn-scan').textContent = 'Start passive scan';
+      log('Passive scan stopped.');
+      return;
+    }
+    try {
+      activeScan = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true, keepRepeatedDevices: true });
+      $('#btn-scan').textContent = 'Stop passive scan';
+      log('Passive scan running. Devices appear as they advertise.', 'ok');
+    } catch (err) {
+      log(`Passive scan failed: ${err.name}: ${err.message}`, 'err');
+    }
+  }
+
+  // Reconnect every light Chrome already has permission for, without any clicks.
+  async function restoreLights() {
+    try {
+      const remembered = await navigator.bluetooth.getDevices();
+      log(`Chrome remembers ${remembered.length.toLocaleString()} device(s).`);
+      remembered.forEach((device, i) => {
+        const d = upsert(device, { source: 'picked' });
+        if (d.protocol) setTimeout(() => connect(device.id), i * 400);
+      });
+      if (!remembered.length && pairedBefore()) {
+        setCheck('remember', 'err', 'Lights were added before, but Chrome forgot them');
+        showSetup('You added lights before, but Chrome forgot them after the refresh. The second flag below is probably off.');
+      }
+    } catch (err) {
+      log(`Could not load remembered devices: ${err.name}: ${err.message}`, 'err');
+    }
+  }
+
+  async function init() {
+    setCheck('secure', window.isSecureContext ? 'ok' : 'err',
+      window.isSecureContext ? 'Secure context (https or localhost)' : 'Not a secure context: open via http://localhost or https://');
+    if (!('bluetooth' in navigator)) {
+      setCheck('api', 'err', 'Web Bluetooth not available in this browser (use Chrome or Edge)');
+      setCheck('adapter', 'err', 'Bluetooth adapter: unknown');
+      setCheck('remember', 'err', 'Remembering devices: unavailable');
+      setCheck('scan', 'err', 'Passive scanning: unavailable');
+      $('#btn-pick').disabled = true;
+      $('#btn-add').disabled = true;
+      $('#lights').innerHTML = '<p class="empty">This browser has no Web Bluetooth. Open the page in Chrome or Edge.</p>';
+      log('navigator.bluetooth is missing.', 'err');
+      return;
+    }
+    setCheck('api', 'ok', 'Web Bluetooth API available');
+    try {
+      const available = await navigator.bluetooth.getAvailability();
+      setCheck('adapter', available ? 'ok' : 'err',
+        available ? 'Bluetooth adapter on' : 'Bluetooth is off, missing, or Chrome lacks OS Bluetooth permission');
+    } catch (err) {
+      setCheck('adapter', 'warn', `Could not check adapter (${err.name})`);
+    }
+    navigator.bluetooth.addEventListener('availabilitychanged', (e) => {
+      setCheck('adapter', e.value ? 'ok' : 'err', e.value ? 'Bluetooth adapter on' : 'Bluetooth adapter off');
+      log(`Bluetooth adapter ${e.value ? 'became available' : 'went away'}.`, e.value ? 'ok' : 'warn');
+    });
+    if (typeof navigator.bluetooth.requestLEScan === 'function') {
+      setCheck('scan', 'ok', 'Passive scanning available');
+      $('#btn-scan').disabled = false;
+      navigator.bluetooth.addEventListener('advertisementreceived', (e) => {
+        upsert(e.device, { source: 'scan', name: e.name, rssi: e.rssi, uuids: e.uuids });
+      });
+    } else {
+      setCheck('scan', 'warn', 'Passive scanning off (needs the experimental flag)');
+    }
+    if (typeof navigator.bluetooth.getDevices === 'function') {
+      setCheck('remember', 'ok', 'Chrome can list remembered lights');
+      await restoreLights();
+    } else {
+      setCheck('remember', 'err', 'Chrome cannot remember lights yet (see the setup box at the top)');
+      showSetup("This Chrome can't remember lights between visits yet, so you'd have to add them again after every refresh.");
+    }
+    if (!/^https?:$/.test(location.protocol)) {
+      showSetup('This page was opened as a file (for example from WhatsApp), so Chrome cannot remember lights for it.');
+    }
+    render();
+  }
+
+  $('#btn-add').addEventListener('click', addLight);
+  $('#btn-pick').addEventListener('click', pickAnyDevice);
+  $('#btn-scan').addEventListener('click', toggleScan);
+  $('#btn-clear-log').addEventListener('click', () => { $('#log').textContent = ''; });
+  document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(b.dataset.copy);
+      b.textContent = 'Copied';
+    } catch {
+      b.textContent = 'Copy failed, select it manually';
+    }
+  }));
+
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-connect], [data-disconnect], [data-power], [data-forget]');
+    if (!el) return;
+    if (el.dataset.connect) {
+      const d = devices.get(el.dataset.connect);
+      if (d) d.retryDelay = 0;
+      connect(el.dataset.connect);
+    }
+    if (el.dataset.disconnect) disconnect(el.dataset.disconnect);
+    if (el.dataset.forget) forget(el.dataset.forget);
+    if (el.dataset.power) {
+      const d = devices.get(el.dataset.id);
+      send(d, 'power', PROTOCOLS[d.protocol].power(el.dataset.power === 'on'));
+    }
+  });
+
+  $('#btn-all-on').addEventListener('click', () => setPowerAll(true));
+  $('#btn-all-off').addEventListener('click', () => setPowerAll(false));
+  $('#color').addEventListener('input', (e) => {
+    const { h, s } = hexToHsv(e.target.value);
+    setColorAll(h, s);
+  });
+  $('#brightness').addEventListener('input', (e) => setBrightnessAll(Number(e.target.value)));
+
+  $('#swatches').innerHTML = PRESETS.map(([name, h, s]) =>
+    `<button class="swatch" title="${name}" aria-label="${name}" data-h="${h}" data-s="${s}" disabled
+       style="background:${rgbToHex(hsvToRgb(h, s, 1))}"></button>`).join('');
+  $('#swatches').addEventListener('click', (e) => {
+    const b = e.target.closest('.swatch');
+    if (!b) return;
+    const h = Number(b.dataset.h), s = Number(b.dataset.s);
+    $('#color').value = rgbToHex(hsvToRgb(h, s, 1));
+    setColorAll(h, s);
+    log(`Colour set to ${b.title}.`);
+  });
+
+  init();
+</script>
+</body>
+</html>
