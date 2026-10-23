@@ -110,8 +110,6 @@
     .topbar h1 { margin: 0; }
     details.section { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 12px; }
     .panel > details.section:first-child { border-top: 0; margin-top: 4px; padding-top: 4px; }
-    .chord-readout { display: flex; align-items: baseline; gap: 12px; margin: 12px 0 4px; }
-    #chord-name { font-size: 2.6rem; font-weight: 700; line-height: 1; min-width: 80px; }
     .settings-head h2 { margin: 0; }
     label.feature { display: flex; align-items: flex-start; gap: 12px; margin: 0; padding: 10px 0; color: var(--text); font-size: .95rem; }
     label.feature + label.feature { border-top: 1px solid var(--border); }
@@ -261,18 +259,6 @@
         <button id="btn-music-stop" class="secondary" disabled>Stop music</button>
       </div>
       </details>
-
-      <details id="sec-chords" class="section" data-collapse="chords" open>
-        <summary>Chord detection</summary>
-        <p class="hint">Listens through this phone's mic and names the chord that's playing. Works best with clear music and the phone near the speaker.</p>
-        <div class="row">
-          <button id="btn-chords" class="secondary">Start listening</button>
-          <span id="chord-status" class="hint"></span>
-        </div>
-        <div class="chord-readout"><span id="chord-name">—</span><span id="chord-conf" class="hint"></span></div>
-        <p id="chord-recent" class="hint"></p>
-        <label id="chord-colours-row" class="check"><input id="opt-chord-colours" type="checkbox"> Colour the lights by chord</label>
-      </details>
     </div>
 
     <div class="panel" data-panel="shows" hidden>
@@ -315,16 +301,6 @@
       <div id="show-list"></div>
       <p id="show-storage" class="hint"></p>
       <p class="hint">Replays are saved in this browser only. Use Export to back them up or move them to another device.</p>
-      </details>
-
-      <details id="sec-songs" class="section" data-collapse="songs" open>
-        <summary>Song recognition</summary>
-        <p class="hint">While you record colour changes, the page also remembers the song that's playing (🎵).
-          Later, when it hears that song again, it starts the matching replay at the right moment. Keep the phone near the speaker.</p>
-        <div class="row">
-          <button id="btn-songs" class="secondary">Start listening for songs</button>
-        </div>
-        <p id="song-status" class="hint"></p>
       </details>
     </div>
   </section>
@@ -444,40 +420,14 @@
   // "Smooth" playback fades into each recorded change over at most this long.
   const FADE_MS = 500;
 
-  // Song recognition compares 200 ms note-profile frames; 40 of them (8 s) per comparison.
-  const FP_FRAME_MS = 200;
-  const MATCH_FRAMES = 40;
-  // A song counts as recognised when its best position matches this well, and beats the best
-  // alternative (another song, or a spot at least 2 s away) by this much.
-  const SONG_MIN_SCORE = 0.55;
-  const SONG_MIN_MARGIN = 0.1;
-  // While following a song, the replay pauses after this long without hearing it.
-  const SONG_LOST_MS = 10000;
-  // A chord is shown when its match is at least this good and beats the runner-up by this much.
-  const CHORD_MIN_SCORE = 0.7;
-  const CHORD_MIN_MARGIN = 0.03;
-  const NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
-  // The 24 major and minor triads, as unit-length 12-note templates.
-  const CHORDS = [];
-  for (let root = 0; root < 12; root++) {
-    [[false, [0, 4, 7]], [true, [0, 3, 7]]].forEach(([minor, steps]) => {
-      const template = new Float32Array(12);
-      steps.forEach((step) => { template[(root + step) % 12] = 1 / Math.sqrt(3); });
-      CHORDS.push({ name: NOTE_NAMES[root] + (minor ? 'm' : ''), root, minor, template });
-    });
-  }
-
   // Features that can be turned off in Settings. All are on by default; `needs` lists
   // features that must also be on.
   const FEATURES = [
     { key: 'scenes', group: 'Lights', name: 'Scenes', desc: 'Built-in light effects such as Rainbow and Strobe, in the Scenes tab.' },
     { key: 'catchup', group: 'Lights', name: 'Catch up reconnecting lights', desc: 'A light that drops out briefly still gets the changes made in the last 20 seconds.' },
     { key: 'music', group: 'Music', name: 'Music reactive lights', desc: "Lights react to music, using their own mics or this phone's mic." },
-    { key: 'chords', group: 'Music', name: 'Chord detection', desc: "Shows the chord that's playing, heard through this phone's mic." },
-    { key: 'chordColours', group: 'Music', name: 'Colour lights by chord', desc: 'Each chord gets its own colour.', needs: ['chords'] },
     { key: 'replays', group: 'Replays', name: 'Replays', desc: 'Keep recorded colour changes and play them back, in the Replays tab.' },
     { key: 'record', group: 'Replays', name: 'Record colour changes', desc: 'Adds the ● Record colour changes button to the Colour tab.', needs: ['replays'] },
-    { key: 'songs', group: 'Replays', name: 'Song recognition', desc: 'Remembers the song while you record, and starts the matching replay when it hears that song again.', needs: ['replays', 'record'] },
     { key: 'diagnostics', group: 'Advanced', name: 'Diagnostics', desc: 'Shows the scanner, command tester and log at the bottom of the page.' },
   ];
   const FEATURE_MAP = Object.fromEntries(FEATURES.map((f) => [f.key, f]));
@@ -621,17 +571,12 @@
   const storedShows = loadJson(SHOWS_KEY, []);
   let shows = (Array.isArray(storedShows) ? storedShows : []).map(cleanShow).filter(Boolean);
   const recorder = { active: false, startedAt: 0, events: [], timer: null, draft: null };
-  // `auto` is set when song recognition started the replay: it then plays at 1× and follows the song.
   const player = {
     queue: [], index: 0, show: null, samples: null, pos: 0,
-    playing: false, startedAt: 0, timer: null, countdown: null, last: null, auto: false,
+    playing: false, startedAt: 0, timer: null, countdown: null, last: null,
   };
-  // The shared microphone and the features listening to it.
-  const mic = { ctx: null, stream: null, fast: null, fine: null, users: new Set(), starting: null, timer: null };
-  const chords = { active: false, frames: [], current: null, candidate: null, count: 0, recent: [], colours: false };
-  const songRec = { active: false, frames: [], sinceCheck: 0, lastHeard: 0 };
-  const fpCache = new Map();
-  let fpAccum = null;
+  // The phone's microphone, open while anything in `users` is listening.
+  const mic = { ctx: null, stream: null, analyser: null, bins: null, users: new Set(), starting: null };
 
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1014,10 +959,6 @@
     if (mode === 'phonemic') stopPhoneMic();
     if (mode === 'devicemic') sendToAll('mic', (p) => p.micOff);
     if (mode === 'show') pausePlayer();
-    if (mode === 'chord') {
-      chords.colours = false;
-      $('#opt-chord-colours').checked = false;
-    }
     mode = next;
     queueRender();
   }
@@ -1112,18 +1053,18 @@
   }
 
   function bandLevel(fromHz, toHz) {
-    const hzPerBin = mic.ctx.sampleRate / mic.fast.fftSize;
+    const hzPerBin = mic.ctx.sampleRate / mic.analyser.fftSize;
     const from = Math.max(1, Math.floor(fromHz / hzPerBin));
-    const to = Math.min(mic.fastBins.length - 1, Math.ceil(toHz / hzPerBin));
+    const to = Math.min(mic.bins.length - 1, Math.ceil(toHz / hzPerBin));
     let sum = 0;
-    for (let i = from; i <= to; i++) sum += mic.fastBins[i];
+    for (let i = from; i <= to; i++) sum += mic.bins[i];
     return sum / ((to - from + 1) * 255);
   }
 
   // Runs 20 times a second: turns the mic signal into one colour and brightness for every light.
   function listenTick() {
-    if (!audio || !mic.fast) return;
-    mic.fast.getByteFrequencyData(mic.fastBins);
+    if (!audio || !mic.analyser) return;
+    mic.analyser.getByteFrequencyData(mic.bins);
     const bass = bandLevel(30, 250), mid = bandLevel(250, 2000), treble = bandLevel(2000, 8000);
     const level = bass * 0.5 + mid * 0.35 + treble * 0.15;
     // Background noise level: follows quiet moments at once, rises only slowly.
@@ -1670,20 +1611,12 @@
     recorder.startedAt = performance.now();
     recorder.events = [snapshot(0)];
     recorder.draft = null;
-    recorder.fp = null;
     $('#rec-save').hidden = true;
     $('#btn-record').textContent = '■ Stop recording';
     $('#btn-record').classList.add('recording');
     recorder.timer = setInterval(updateRecStatus, 250);
     updateRecStatus();
     log('Recording colour changes.');
-    // Song recognition: also remember the song that's playing, so the replay can start itself later.
-    if (featureOn('songs')) {
-      recorder.fp = { start: null, frames: [] };
-      acquireMic('record').then((ok) => {
-        if (!ok) recorder.fp = null;
-      });
-    }
   }
 
   function updateRecStatus() {
@@ -1693,26 +1626,17 @@
       log('Recording stopped at the 10-minute limit.', 'warn');
       return;
     }
-    const song = recorder.fp && recorder.fp.frames.length ? ' · 🎵 remembering the song' : '';
-    $('#rec-status').textContent = `● ${fmtTime(ms)} · ${(recorder.events.length - 1).toLocaleString()} changes${song}`;
+    $('#rec-status').textContent = `● ${fmtTime(ms)} · ${(recorder.events.length - 1).toLocaleString()} changes`;
   }
 
   function stopRecording() {
     recorder.active = false;
     clearInterval(recorder.timer);
     const duration = Math.min(MAX_RECORD_MS, Math.max(1000, Math.round(performance.now() - recorder.startedAt)));
-    const fp = recorder.fp;
-    recorder.fp = null;
-    if (fp) releaseMic('record');
-    // Under 5 s of song is too little to recognise it by.
-    const fingerprint = fp && fp.frames.length >= 25
-      ? { frameMs: FP_FRAME_MS, start: fp.start, frames: fp.frames.join('') }
-      : null;
-    recorder.draft = { duration, events: recorder.events, ...(fingerprint ? { fingerprint } : {}) };
+    recorder.draft = { duration, events: recorder.events };
     $('#btn-record').textContent = '● Record colour changes';
     $('#btn-record').classList.remove('recording');
-    $('#rec-status').textContent = `${fmtTime(duration)} · ${(recorder.events.length - 1).toLocaleString()} changes`
-      + (fingerprint ? ' · 🎵 song remembered' : '');
+    $('#rec-status').textContent = `${fmtTime(duration)} · ${(recorder.events.length - 1).toLocaleString()} changes`;
     $('#rec-name').value = `Replay ${fmtDate(new Date(), true)}`;
     $('#rec-save').hidden = false;
   }
@@ -1752,19 +1676,12 @@
       .sort((a, b) => a[0] - b[0]);
     if (!events.length) return null;
     const last = events[events.length - 1][0];
-    // The song fingerprint: one 12-hex-digit note profile per 200 ms.
-    const fp = x.fingerprint;
-    const fingerprint = fp && fp.frameMs === FP_FRAME_MS && typeof fp.frames === 'string'
-      && fp.frames.length >= 12 * 25 && fp.frames.length % 12 === 0 && /^[0-9a-f]+$/.test(fp.frames)
-      ? { frameMs: FP_FRAME_MS, start: clamp(fp.start, 0, MAX_RECORD_MS), frames: fp.frames.slice(0, 12 * (MAX_RECORD_MS / FP_FRAME_MS)) }
-      : null;
     return {
       id: typeof x.id === 'string' && x.id ? x.id.slice(0, 40) : newId(),
       name: x.name.trim().slice(0, 80) || 'Untitled replay',
       created: Number.isFinite(x.created) ? x.created : Date.now(),
       duration: clamp(x.duration, Math.max(1000, last), MAX_RECORD_MS),
       events,
-      ...(fingerprint ? { fingerprint } : {}),
     };
   }
 
@@ -1790,7 +1707,7 @@
       const isCurrent = player.show && player.show.id === show.id;
       const active = isCurrent && (player.playing || player.countdown);
       return `<div class="show${isCurrent ? ' playing' : ''}">
-        <div class="show-head"><span class="name">${esc(show.name)}${show.fingerprint ? '<span class="badge">🎵 Song remembered</span>' : ''}</span>
+        <div class="show-head"><span class="name">${esc(show.name)}</span>
           <span class="hint">${fmtTime(show.duration)} · ${fmtDate(new Date(show.created))}</span></div>
         <canvas class="ribbon" data-ribbon="${id}"></canvas>
         <div class="row">
@@ -1870,7 +1787,6 @@
   function deleteShow(id) {
     const show = findShow(id);
     if (!show || !window.confirm(`Delete the replay "${show.name}"? This can't be undone.`)) return;
-    fpCache.delete(id);
     if (player.show && player.show.id === id) {
       stopPlayer();
     } else if (player.queue.includes(id)) {
@@ -2046,7 +1962,7 @@
     if (player.pos >= player.show.duration) player.pos = 0;
     player.playing = true;
     player.last = null;
-    player.startedAt = performance.now() - player.pos / playSpeed();
+    player.startedAt = performance.now() - player.pos / settings.speed;
     clearInterval(player.timer);
     player.timer = setInterval(playerTick, 50);
     keepAwake();
@@ -2075,7 +1991,6 @@
     player.show = null;
     player.queue = [];
     player.pos = 0;
-    player.auto = false;
     if (mode === 'show') {
       mode = 'colour';
       queueRender();
@@ -2087,7 +2002,7 @@
   function playerTick() {
     const show = player.show;
     if (!show) return;
-    player.pos = Math.min(show.duration, (performance.now() - player.startedAt) * playSpeed());
+    player.pos = Math.min(show.duration, (performance.now() - player.startedAt) * settings.speed);
     applyShowState(stateAt(show, player.pos, settings.smoothing));
     updateNowPlaying();
     if (player.pos >= show.duration) showEnded();
@@ -2096,7 +2011,7 @@
   function showEnded() {
     let next = player.index + 1;
     if (next >= player.queue.length) {
-      if (!settings.repeat || player.auto) {
+      if (!settings.repeat) {
         log(`Finished "${player.show.name}".`);
         stopPlayer();
         return;
@@ -2121,7 +2036,7 @@
     if (!player.show || !Number.isFinite(pos)) return;
     player.pos = Math.min(player.show.duration, Math.max(0, pos));
     player.last = null;
-    if (player.playing) player.startedAt = performance.now() - player.pos / playSpeed();
+    if (player.playing) player.startedAt = performance.now() - player.pos / settings.speed;
     updateNowPlaying();
   }
 
@@ -2139,23 +2054,8 @@
     drawRibbon($('#np-ribbon'), player.show, player.pos);
   }
 
-  // Replays started by song recognition follow the song, so they always run at 1×.
-  function playSpeed() {
-    return player.auto ? 1 : settings.speed;
-  }
-
-  function startShowAt(show, pos) {
-    stopPlayer();
-    player.queue = [show.id];
-    if (!loadIntoPlayer(0)) return;
-    player.auto = true;
-    player.pos = Math.min(show.duration, Math.max(0, pos));
-    startPlayback();
-  }
-
-  // ---- Shared microphone ----
-  // One mic stream feeds everything that listens: the phone-mic patterns, chord detection,
-  // song recognition, and remembering the song while recording. It closes when nothing needs it.
+  // ---- Phone microphone ----
+  // Opened when a phone-mic pattern starts listening and closed when it stops.
 
   async function acquireMic(user) {
     mic.users.add(user);
@@ -2184,23 +2084,11 @@
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       });
       await ctx.resume();
-      const source = ctx.createMediaStreamSource(stream);
-      // Fast: a quick, coarse spectrum for beats and levels. Fine: a slower, detailed one for notes.
-      const fast = ctx.createAnalyser();
-      fast.fftSize = 1024;
-      fast.smoothingTimeConstant = 0.5;
-      const fine = ctx.createAnalyser();
-      fine.fftSize = 8192;
-      fine.smoothingTimeConstant = 0;
-      source.connect(fast);
-      source.connect(fine);
-      Object.assign(mic, {
-        ctx, stream, fast, fine,
-        fastBins: new Uint8Array(fast.frequencyBinCount),
-        fineDb: new Float32Array(fine.frequencyBinCount),
-        noteBins: buildNoteBins(ctx.sampleRate, fine.fftSize),
-      });
-      mic.timer = setInterval(micTick, 100);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.5;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      Object.assign(mic, { ctx, stream, analyser, bins: new Uint8Array(analyser.frequencyBinCount) });
     } catch (err) {
       ctx.close();
       throw err;
@@ -2210,348 +2098,9 @@
   function releaseMic(user) {
     mic.users.delete(user);
     if (mic.users.size || !mic.stream) return;
-    clearInterval(mic.timer);
     mic.stream.getTracks().forEach((t) => t.stop());
     mic.ctx.close();
-    Object.assign(mic, { ctx: null, stream: null, fast: null, fine: null, timer: null });
-    fpAccum = null;
-  }
-
-  // For each detailed-spectrum bin between A2 and about B6: which of the 12 notes it belongs to,
-  // and how much it counts. Full at the note's centre, nothing halfway to the next note, and
-  // scaled down for high notes, which cover more bins, so they don't outweigh low ones.
-  function buildNoteBins(sampleRate, fftSize) {
-    const hz = sampleRate / fftSize;
-    const bins = [];
-    for (let i = 1; i < fftSize / 2; i++) {
-      const f = i * hz;
-      if (f < 110 || f > 2000) continue;
-      const midi = 69 + 12 * Math.log2(f / 440);
-      const nearest = Math.round(midi);
-      const weight = Math.cos((midi - nearest) * Math.PI) ** 2 * Math.min(1, hz / (f * 0.0595));
-      if (weight > 0.01) bins.push([i, ((nearest % 12) + 12) % 12, weight]);
-    }
-    return bins;
-  }
-
-  // How strongly each of the 12 notes is sounding ("chroma"). Only spectrum peaks well above the
-  // frame's typical level count, so background noise doesn't smear every note equally.
-  function computeChroma() {
-    mic.fine.getFloatFrequencyData(mic.fineDb);
-    const levels = Float32Array.from(mic.noteBins, ([i]) => mic.fineDb[i]).sort();
-    const floor = 10 ** ((levels[levels.length >> 1] + 10) / 20);
-    const chroma = new Float32Array(12);
-    for (const [i, note, weight] of mic.noteBins) {
-      const db = mic.fineDb[i];
-      if (db > -110) chroma[note] += weight * Math.max(0, 10 ** (db / 20) - floor);
-    }
-    return chroma;
-  }
-
-  // Ten times a second: a note profile for chord detection. Every other one also completes a
-  // 200 ms fingerprint frame for song recognition and for recording.
-  function micTick() {
-    if (!mic.fine) return;
-    const chroma = computeChroma();
-    if (chords.active) onChordFrame(chroma);
-    if (!fpAccum) {
-      fpAccum = chroma;
-      return;
-    }
-    for (let k = 0; k < 12; k++) fpAccum[k] += chroma[k];
-    const code = encodeFrame(fpAccum);
-    fpAccum = null;
-    onFingerprintFrame(code);
-  }
-
-  // A fingerprint frame is 12 hex digits: each note's strength relative to the strongest.
-  function encodeFrame(chroma) {
-    const max = Math.max(...chroma);
-    if (!(max > 0)) return '000000000000';
-    return Array.from(chroma, (v) => Math.round((v / max) * 15).toString(16)).join('');
-  }
-
-  function onFingerprintFrame(code) {
-    if (recorder.active && recorder.fp) {
-      if (recorder.fp.start === null) {
-        recorder.fp.start = Math.max(0, Math.round(performance.now() - recorder.startedAt - FP_FRAME_MS));
-      }
-      if (recorder.fp.frames.length < MAX_RECORD_MS / FP_FRAME_MS) recorder.fp.frames.push(code);
-    }
-    if (songRec.active) songTick(code);
-  }
-
-  // ---- Chord detection ----
-
-  function estimateChord(frames) {
-    const avg = new Float32Array(12);
-    frames.forEach((f) => { for (let k = 0; k < 12; k++) avg[k] += f[k]; });
-    const norm = Math.hypot(...avg);
-    if (!(norm > 0)) return null;
-    let best = null;
-    let second = 0;
-    CHORDS.forEach((chord) => {
-      let score = 0;
-      for (let k = 0; k < 12; k++) score += (avg[k] / norm) * chord.template[k];
-      if (!best || score > best.score) {
-        if (best) second = Math.max(second, best.score);
-        best = { chord, score };
-      } else {
-        second = Math.max(second, score);
-      }
-    });
-    return { ...best, margin: best.score - second };
-  }
-
-  // Each chord's colour: roots go round the wheel in fifths (C red, G orange, D yellow…), so chords
-  // that often follow each other get neighbouring colours. Minor chords are paler.
-  function chordColour(chord) {
-    return { h: ((chord.root * 7) % 12) * 30, s: chord.minor ? 0.55 : 1 };
-  }
-
-  function onChordFrame(chroma) {
-    // Judge the last 0.6 s together, so single notes and drum hits don't flip the answer.
-    chords.frames.push(chroma);
-    if (chords.frames.length > 6) chords.frames.shift();
-    const est = estimateChord(chords.frames);
-    const confident = est && est.score >= CHORD_MIN_SCORE && est.margin >= CHORD_MIN_MARGIN;
-    const name = confident ? est.chord.name : null;
-    // A change must win two estimates in a row (0.2 s) before it's shown.
-    if (name === chords.candidate) chords.count++;
-    else {
-      chords.candidate = name;
-      chords.count = 1;
-    }
-    if (chords.count === 2 && (chords.current ? chords.current.name : null) !== name) {
-      chords.current = confident ? est.chord : null;
-      if (chords.current) {
-        chords.recent.push(chords.current.name);
-        if (chords.recent.length > 8) chords.recent.shift();
-        if (chords.colours) {
-          const { h, s } = chordColour(chords.current);
-          showColour(h, s);
-          setColorAll(h, s, true);
-        }
-      }
-    }
-    $('#chord-name').textContent = chords.current ? chords.current.name : '—';
-    $('#chord-conf').textContent = est ? `match ${(est.score * 100).toFixed(1)}%` : '';
-    $('#chord-recent').textContent = chords.recent.length ? `Recent: ${chords.recent.join(' → ')}` : '';
-  }
-
-  async function startChordDetection() {
-    if (chords.active) return;
-    $('#chord-status').textContent = 'Starting the mic…';
-    if (!(await acquireMic('chords'))) {
-      $('#chord-status').textContent = 'The mic could not be used.';
-      return;
-    }
-    Object.assign(chords, { active: true, frames: [], current: null, candidate: null, count: 0, recent: [] });
-    $('#btn-chords').textContent = 'Stop listening';
-    $('#chord-status').textContent = 'Listening…';
-    keepAwake();
-  }
-
-  function stopChordDetection() {
-    if (!chords.active) return;
-    if (chords.colours) setChordColours(false);
-    chords.active = false;
-    releaseMic('chords');
-    releaseAwake();
-    $('#btn-chords').textContent = 'Start listening';
-    $('#chord-status').textContent = '';
-    $('#chord-name').textContent = '—';
-    $('#chord-conf').textContent = '';
-  }
-
-  async function setChordColours(on) {
-    if (on) {
-      if (!chords.active) await startChordDetection();
-      if (chords.active) {
-        enterMode('chord');
-        markActive(null);
-        chords.colours = true;
-        if (chords.current) {
-          const { h, s } = chordColour(chords.current);
-          showColour(h, s);
-          setColorAll(h, s, true);
-        }
-        log('Colouring the lights by chord.');
-      }
-    } else {
-      chords.colours = false;
-      if (mode === 'chord') {
-        mode = 'colour';
-        queueRender();
-      }
-    }
-    $('#opt-chord-colours').checked = chords.colours;
-  }
-
-  // ---- Song recognition ----
-
-  // Turns hex fingerprint frames into zero-mean, unit-length note profiles, so comparing two
-  // frames is a single dot product (1 = same notes in the same proportions).
-  function decodeFrames(codes) {
-    const n = Math.floor(codes.length / 12);
-    const vec = new Float32Array(n * 12);
-    const valid = new Uint8Array(n);
-    const tmp = new Float32Array(12);
-    for (let i = 0; i < n; i++) {
-      let mean = 0;
-      for (let k = 0; k < 12; k++) {
-        tmp[k] = parseInt(codes[i * 12 + k], 16);
-        mean += tmp[k] / 12;
-      }
-      let norm = 0;
-      for (let k = 0; k < 12; k++) norm += (tmp[k] - mean) ** 2;
-      if (norm < 1e-6) continue;
-      norm = Math.sqrt(norm);
-      for (let k = 0; k < 12; k++) vec[i * 12 + k] = (tmp[k] - mean) / norm;
-      valid[i] = 1;
-    }
-    return { n, vec, valid };
-  }
-
-  function decodedFingerprint(show) {
-    if (!show.fingerprint) return null;
-    const cached = fpCache.get(show.id);
-    if (cached && cached.src === show.fingerprint.frames) return cached;
-    const decoded = { ...decodeFrames(show.fingerprint.frames), src: show.fingerprint.frames };
-    fpCache.set(show.id, decoded);
-    return decoded;
-  }
-
-  // How well what was just heard matches a remembered song starting at frame `o`: the average
-  // similarity of the frames that line up, or null if too few frames had any notes.
-  function scoreAt(live, ref, o) {
-    let sum = 0;
-    let count = 0;
-    for (let k = 0; k < live.n; k++) {
-      if (!live.valid[k] || !ref.valid[o + k]) continue;
-      const a = k * 12;
-      const b = (o + k) * 12;
-      let dot = 0;
-      for (let j = 0; j < 12; j++) dot += live.vec[a + j] * ref.vec[b + j];
-      sum += dot;
-      count++;
-    }
-    return count >= live.n / 2 ? sum / count : null;
-  }
-
-  // Slides the last 8 s heard along every remembered song and returns the best spot, and whether
-  // it clearly beats the best alternative. Spots within 2 s of the best one don't count as
-  // alternatives: a chord lasts about that long, so they always score almost as well.
-  function findSong(live, onlyShow = null, from = 0, to = Infinity) {
-    const spots = [];
-    let best = null;
-    (onlyShow ? [onlyShow] : shows).forEach((show) => {
-      const ref = decodedFingerprint(show);
-      if (!ref) return;
-      for (let o = Math.max(0, from); o + live.n <= ref.n && o <= to; o++) {
-        const score = scoreAt(live, ref, o);
-        if (score === null) continue;
-        const spot = { show, offset: o, score };
-        spots.push(spot);
-        if (!best || score > best.score) best = spot;
-      }
-    });
-    if (!best) return null;
-    let runnerUp = 0;
-    spots.forEach((s) => {
-      if (s.show !== best.show || Math.abs(s.offset - best.offset) >= 10) runnerUp = Math.max(runnerUp, s.score);
-    });
-    best.confident = best.score >= SONG_MIN_SCORE && best.score - runnerUp >= SONG_MIN_MARGIN;
-    best.pos = best.show.fingerprint.start + (best.offset + live.n) * FP_FRAME_MS;
-    return best;
-  }
-
-  function setSongStatus(text) {
-    $('#song-status').textContent = text;
-  }
-
-  function songTick(code) {
-    songRec.frames.push(code);
-    if (songRec.frames.length > MATCH_FRAMES) songRec.frames.shift();
-    if (!shows.some((s) => s.fingerprint)) {
-      setSongStatus('No replay has a remembered song yet. Record colour changes while the song plays.');
-      return;
-    }
-    if (songRec.frames.length < MATCH_FRAMES) {
-      setSongStatus(`Listening… ${Math.round((songRec.frames.length * FP_FRAME_MS) / 1000)} of 8 s`);
-      return;
-    }
-    const following = player.auto && player.playing;
-    // Compare once a second, or every 2 s while already following a song.
-    if (++songRec.sinceCheck < (following ? 10 : 5)) return;
-    songRec.sinceCheck = 0;
-    const live = decodeFrames(songRec.frames.join(''));
-    const now = performance.now();
-    const pct = (m) => `match ${(m.score * 100).toFixed(1)}%`;
-
-    // Following: look near where the replay is first, so a repeated chorus elsewhere in the
-    // song can't make it jump.
-    if (following) {
-      const expected = Math.round((player.pos - player.show.fingerprint.start) / FP_FRAME_MS) - live.n;
-      const near = findSong(live, player.show, expected - 10, expected + 10);
-      if (near && near.score >= SONG_MIN_SCORE) {
-        songRec.lastHeard = now;
-        if (Math.abs(near.pos - player.pos) > 1000) {
-          seekTo(near.pos);
-          log(`Song recognition: re-synced "${player.show.name}" to ${fmtTime(near.pos)}.`);
-        }
-        setSongStatus(`Following "${player.show.name}" (${pct(near)})`);
-        return;
-      }
-    }
-    const match = findSong(live);
-    if (match && match.confident) {
-      songRec.lastHeard = now;
-      const manual = player.show && player.playing && !player.auto;
-      if (manual) {
-        setSongStatus(`Heard "${match.show.name}", but another replay is playing.`);
-        return;
-      }
-      if (!(player.show && player.show.id === match.show.id && player.playing)) {
-        startShowAt(match.show, match.pos);
-        log(`Song recognition: heard "${match.show.name}" at ${fmtTime(match.pos)}; replay started.`, 'ok');
-      }
-      setSongStatus(`Recognised "${match.show.name}" (${pct(match)})`);
-      return;
-    }
-    if (following && now - songRec.lastHeard > SONG_LOST_MS) {
-      pausePlayer();
-      log('Song recognition: the song stopped or changed, so the replay is paused.', 'warn');
-    }
-    setSongStatus(match ? `Listening… best guess "${match.show.name}" (${pct(match)}), not sure yet` : 'Listening…');
-  }
-
-  async function startSongRecognition() {
-    if (songRec.active) return;
-    setSongStatus('Starting the mic…');
-    if (!(await acquireMic('songs'))) {
-      setSongStatus('The mic could not be used.');
-      return;
-    }
-    Object.assign(songRec, { active: true, frames: [], sinceCheck: 0, lastHeard: performance.now() });
-    $('#btn-songs').textContent = 'Stop listening for songs';
-    setSongStatus('Listening…');
-    keepAwake();
-  }
-
-  function stopSongRecognition() {
-    if (!songRec.active) return;
-    songRec.active = false;
-    songRec.frames = [];
-    // A replay it started keeps playing, now as a normal replay at the chosen speed.
-    if (player.auto) {
-      player.auto = false;
-      if (player.playing) player.startedAt = performance.now() - player.pos / playSpeed();
-    }
-    releaseMic('songs');
-    releaseAwake();
-    $('#btn-songs').textContent = 'Start listening for songs';
-    setSongStatus('');
+    Object.assign(mic, { ctx: null, stream: null, analyser: null, bins: null });
   }
 
   // ---- Settings: features that can be turned off ----
@@ -2589,18 +2138,12 @@
   function applyFeatures() {
     const on = Object.fromEntries(FEATURES.map((f) => [f.key, featureOn(f.key)]));
     $('.tab[data-tab="scenes"]').hidden = !on.scenes;
-    $('.tab[data-tab="music"]').hidden = !(on.music || on.chords);
+    $('.tab[data-tab="music"]').hidden = !on.music;
     $('.tab[data-tab="shows"]').hidden = !on.replays;
     $('#sec-music-reactive').hidden = !on.music;
-    $('#sec-chords').hidden = !on.chords;
-    $('#chord-colours-row').hidden = !on.chordColours;
-    $('#sec-songs').hidden = !on.songs;
     $('.recorder').hidden = !on.record;
     $('#diagnostics').hidden = !on.diagnostics;
     if (!on.music && (mode === 'phonemic' || mode === 'devicemic')) stopMusic();
-    if (!on.chordColours && chords.colours) setChordColours(false);
-    if (!on.chords) stopChordDetection();
-    if (!on.songs) stopSongRecognition();
     if (!on.record && recorder.active) {
       stopRecording();
       discardRecording();
@@ -2659,12 +2202,6 @@
     });
   }
 
-  function setupListening() {
-    $('#btn-chords').addEventListener('click', () => (chords.active ? stopChordDetection() : startChordDetection()));
-    $('#opt-chord-colours').addEventListener('change', (e) => setChordColours(e.target.checked));
-    $('#btn-songs').addEventListener('click', () => (songRec.active ? stopSongRecognition() : startSongRecognition()));
-  }
-
   function setupShows() {
     $('#opt-smooth').value = settings.smoothing;
     $('#opt-speed').value = String(settings.speed);
@@ -2680,7 +2217,7 @@
     $('#opt-speed').addEventListener('change', (e) => {
       settings.speed = Number(e.target.value);
       saveSettings();
-      if (player.playing) player.startedAt = performance.now() - player.pos / playSpeed();
+      if (player.playing) player.startedAt = performance.now() - player.pos / settings.speed;
     });
     $('#opt-repeat').addEventListener('change', (e) => {
       settings.repeat = e.target.checked;
@@ -2782,7 +2319,6 @@
   buildChips();
   setupWheel();
   setupShows();
-  setupListening();
   setupSettings();
   setupCollapsibles();
   let savedTab = null;

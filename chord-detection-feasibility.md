@@ -44,6 +44,6 @@ Very unlikely. The analysis runs on small, fixed-size audio buffers, in a backgr
 1. **Phase 1:** live chord display plus a "Chord colours" pattern, using Meyda and Tonal. These are small and MIT-licensed.
 2. **Phase 2:** recognise songs for your saved shows with Olaf, only if Phase 1 turns out accurate enough in your room.
 
-## Update 10/23/26: what was built
+## Update 10/23/26: built, then removed
 
-Both phases are built, without any of the libraries above. The note profile, chord matching and song fingerprints are written directly in the page, so it stays a single file with no downloads and no AGPL code. Song matching compares 8 s of note profiles against each remembered song, rather than using Shazam-style spectral peaks. That's simpler, and good enough for a small personal list of songs. In simulated tests it recognised a song after about 9 s and started the replay within 0.2 s of the real position. The thresholds will probably need tuning once it's tried with real music in a real room.
+Both phases were built, without any of the libraries above. They worked in simulated tests but didn't work with real music through the phone's mic, so chord detection, colouring by chord and song recognition were removed from the app the same day. Recording colour changes and replaying them stay.
