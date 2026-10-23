@@ -23,13 +23,22 @@ After that, opening or refreshing the page reconnects every light automatically,
 
 Chrome remembers lights per site, so `localhost` and a GitHub Pages address each need their own one-time "Add a light".
 
+## Features
+
+- **Colour:** one colour picker and presets for every light, plus a shared brightness slider.
+- **Scenes:** "Together" scenes that pick the closest match on each brand, each brand's full scene list, and a shared speed slider.
+- **Music:**
+  - *Lights' own mics:* each controller listens with its own mic. LotusLamp X uses the chosen pattern (Energy, Rhythm, Spectrum, Scroll 1/2); MR Star uses its built-in music mode. One sensitivity slider covers both.
+  - *This phone's mic:* the page listens and sends the same colour and brightness to every light about 20 times a second, so all lights stay in sync. Patterns: Pulse, Beat colours, Spectrum. The page keeps the screen on while listening.
+- **Diagnostics:** environment checks, "Pick any device", passive scan, service listing, a log, and a command tester for sending one scene number or raw bytes to a single light.
+
 ## Protocols
 
-Both brands use service `fff0` and write to characteristic `fff3`:
+Both brands use service `fff0` and write to characteristic `fff3`.
 
 | Brand | Frame | Source |
 |---|---|---|
-| LotusLamp X | `7e … ef`, RGB colour, brightness 0–100 | [elkbledom](https://github.com/dave-code-ruiz/elkbledom) (MELK-OA10 model) |
-| MR Star | `bc … 55`, hue/saturation colour, brightness 0–1,000 | [homey-mrstar](https://github.com/smarthomesven/homey-mrstar) |
+| LotusLamp X | `7e … ef`: RGB colour, brightness 0–100, scenes `7e 05 03 NN 06 …`, mic patterns `7e 05 03 8N 04 …`, mic on/off, sensitivity and speed 0–100 | [elkbledom](https://github.com/dave-code-ruiz/elkbledom) (MELK-OA10 model) |
+| MR Star | `bc CMD LEN DATA 55`: hue/saturation colour, brightness 0–1,000, scenes `bc 06`, speed `bc 08`, mic mode `bc 0f`, sensitivity `bc 12` | [homey-mrstar](https://github.com/smarthomesven/homey-mrstar), [ha-findn-led-ble](https://github.com/hirotasoshu/ha-findn-led-ble), [Tira-led](https://github.com/Luiscrespo-bot/Tira-led) |
 
-The **Diagnostics** section has the original scanner: environment checks, "Pick any device", passive scan, service listing and a log.
+Not yet confirmed on real hardware: the names of LotusLamp X scenes 2–5, the order of mic patterns `84`–`87`, MR Star's mic patterns, and MR Star's "leave mic mode" command (`bc 0f 01 00 55` is a guess).
