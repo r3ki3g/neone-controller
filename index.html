@@ -86,14 +86,31 @@
     .wheel .disc { position: absolute; inset: calc(var(--rim) + var(--gap)); border-radius: 50%; cursor: crosshair;
                    background: radial-gradient(closest-side, #fff, rgba(255, 255, 255, 0)),
                                conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
-    #wheel-thumb, #rim-thumb { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%;
+    .wheel-thumb, .rim-thumb { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%;
                    border: 3px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .5); pointer-events: none; }
-    #rim-thumb { background: var(--panel); }
+    .rim-thumb { background: var(--panel); }
     .rim-label { position: absolute; bottom: 0; font-size: .72rem; color: var(--muted); pointer-events: none; }
-    .rim-label.off { left: 33%; } .rim-label.max { right: 33%; }
+    .rim-label.min { left: 33%; } .rim-label.max { right: 33%; }
     label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: .9rem; }
     input[type=checkbox] { width: auto; padding: 0; accent-color: var(--accent); }
-    .recorder { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .create { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+    #seq-new-row { margin-top: 10px; }
+    .np-options { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+    .np-options .chip { padding: 6px 12px; }
+    /* Colour sequence editor */
+    .seq-stop { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 10px;
+                border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+    .seq-stop.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .seq-dot { flex: none; width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border); }
+    .seq-stop .grow { flex: 1; min-width: 100px; }
+    .seq-stop label { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); }
+    .seq-stop input { width: 64px; padding: 6px 8px; }
+    .seq-stop button { padding: 6px 10px; }
+    .seq-link { margin: 4px 0 0 22px; padding: 4px 0 4px 12px; border-left: 2px dashed var(--border); }
+    .seq-link-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 0; background: none;
+                     color: var(--text); text-align: left; }
+    .seq-strip { flex: 1; min-width: 60px; height: 10px; border-radius: 5px; }
+    .seq-link-edit input { max-width: 120px; }
     #btn-record.recording { background: var(--err); }
     .options { align-items: flex-end; }
     .options .opt { flex: 1; min-width: 110px; }
@@ -167,7 +184,7 @@
     <div class="control-group">
       <label for="brightness">Brightness</label>
       <div class="row">
-        <input id="brightness" type="range" min="0" max="100" value="100" disabled>
+        <input id="brightness" type="range" min="1" max="100" value="100" disabled>
         <span id="brightness-value" class="value">100.0%</span>
       </div>
     </div>
@@ -183,9 +200,9 @@
       <label for="color">Colour</label>
       <div id="wheel" class="wheel disabled" hidden>
         <div class="rim" aria-label="Brightness ring"></div>
-        <div class="disc" aria-label="Colour wheel"><div id="wheel-thumb"></div></div>
-        <div id="rim-thumb"></div>
-        <span class="rim-label off">Off</span>
+        <div class="disc" aria-label="Colour wheel"><div id="wheel-thumb" class="wheel-thumb"></div></div>
+        <div id="rim-thumb" class="rim-thumb"></div>
+        <span class="rim-label min">Min</span>
         <span class="rim-label max">Max</span>
       </div>
       <div class="row">
@@ -194,19 +211,24 @@
       </div>
       <label id="wheel-toggle" class="check" hidden><input id="opt-wheel" type="checkbox"> Use colour wheel</label>
       <p class="hint">Every light gets the same colour. On the wheel, go around for the colour and towards the centre for paler;
-        the outer ring is brightness, all the way down to off.</p>
-      <div class="recorder">
-        <div class="row">
-          <button id="btn-record" class="secondary" disabled>● Record colour changes</button>
-          <span id="rec-status" class="hint"></span>
-        </div>
-        <div id="rec-save" hidden>
-          <label for="rec-name">Name this replay</label>
-          <input id="rec-name" maxlength="80" autocomplete="off">
-          <div class="row" style="margin-top: 8px">
-            <button id="btn-rec-save">Save</button>
-            <button id="btn-rec-discard" class="secondary">Discard</button>
+        the outer ring is brightness, from dim to full.</p>
+      <div class="create">
+        <div class="recorder">
+          <div class="row">
+            <button id="btn-record" class="secondary" disabled>● Record colour changes</button>
+            <span id="rec-status" class="hint"></span>
           </div>
+          <div id="rec-save" hidden>
+            <label for="rec-name">Name this replay</label>
+            <input id="rec-name" maxlength="80" autocomplete="off">
+            <div class="row" style="margin-top: 8px">
+              <button id="btn-rec-save">Save</button>
+              <button id="btn-rec-discard" class="secondary">Discard</button>
+            </div>
+          </div>
+        </div>
+        <div id="seq-new-row" class="row">
+          <button id="btn-seq-new" class="secondary">＋ Create colour sequence</button>
         </div>
       </div>
     </div>
@@ -270,27 +292,42 @@
           <button id="btn-np-stop" class="secondary">■ Stop</button>
           <span id="np-countdown" class="countdown"></span>
         </div>
+        <div class="np-options">
+          <div id="np-smooth-box">
+            <label for="np-smooth">Smoothing</label>
+            <select id="np-smooth">
+              <option value="exact">As recorded</option>
+              <option value="smooth">Smooth</option>
+              <option value="extra">Extra smooth</option>
+            </select>
+          </div>
+          <label>Speed</label>
+          <div id="np-speeds" class="chips">
+            <button class="chip" data-speed="0.25">0.25×</button>
+            <button class="chip" data-speed="0.5">0.5×</button>
+            <button class="chip" data-speed="1">1×</button>
+            <button class="chip" data-speed="2">2×</button>
+            <button class="chip" data-speed="4">4×</button>
+          </div>
+          <div class="row options">
+            <div class="opt">
+              <label for="np-speed">Custom speed (×)</label>
+              <input id="np-speed" inputmode="decimal" autocomplete="off">
+            </div>
+            <div class="opt">
+              <label for="np-length">Or play it over (m:ss or h:mm:ss)</label>
+              <input id="np-length" inputmode="numeric" placeholder="1:00" autocomplete="off">
+            </div>
+          </div>
+          <p id="np-speed-note" class="hint"></p>
+          <label class="check"><input id="np-repeat" type="checkbox"> <span id="np-repeat-label">Repeat this replay</span></label>
+          <p class="hint">These settings are saved with the replay.</p>
+        </div>
       </div>
       <details id="sec-replays" class="section" data-collapse="replays" open>
-      <summary>Recorded colour changes</summary>
-      <div class="row options">
-        <div class="opt">
-          <label for="opt-smooth">Smoothing</label>
-          <select id="opt-smooth">
-            <option value="exact">As recorded</option>
-            <option value="smooth">Smooth</option>
-            <option value="extra">Extra smooth</option>
-          </select>
-        </div>
-        <div class="opt">
-          <label for="opt-speed">Speed</label>
-          <select id="opt-speed">
-            <option value="0.5">0.5×</option>
-            <option value="1">1×</option>
-            <option value="2">2×</option>
-          </select>
-        </div>
-        <label class="check"><input id="opt-repeat" type="checkbox"> Repeat</label>
+      <summary>Your replays</summary>
+      <div class="row">
+        <button id="btn-seq-new-2" class="secondary">＋ Create colour sequence</button>
       </div>
       <div class="row" style="margin-top: 12px">
         <button id="btn-play-all" disabled>▶ Replay all</button>
@@ -380,6 +417,38 @@
       <div id="feature-list"></div>
     </section>
   </div>
+
+  <div id="view-sequence" hidden>
+    <section>
+      <div class="row settings-head">
+        <button id="btn-seq-back" class="secondary">← Back</button>
+        <h2 id="seq-title">New colour sequence</h2>
+      </div>
+      <label for="seq-name">Name</label>
+      <input id="seq-name" maxlength="80" autocomplete="off">
+      <p class="hint">Tap a colour in the list, then set it on the wheel; the outer ring is its brightness.
+        Tap an arrow to choose how long the change takes and how it moves.</p>
+      <div id="seq-wheel" class="wheel">
+        <div class="rim" aria-label="Brightness ring"></div>
+        <div class="disc" aria-label="Colour wheel"><div class="wheel-thumb"></div></div>
+        <div class="rim-thumb"></div>
+        <span class="rim-label min">Min</span>
+        <span class="rim-label max">Max</span>
+      </div>
+      <div id="seq-list"></div>
+      <div class="row" style="margin-top: 12px">
+        <button id="btn-seq-add" class="secondary">+ Add colour</button>
+        <label class="check"><input id="seq-loop" type="checkbox"> Loop back to the first colour</label>
+      </div>
+      <canvas id="seq-ribbon" class="ribbon big"></canvas>
+      <p id="seq-total" class="hint"></p>
+      <div class="row">
+        <button id="btn-seq-preview" class="secondary">▶ Preview on lights</button>
+        <button id="btn-seq-save">Save</button>
+        <button id="btn-seq-cancel" class="secondary">Cancel</button>
+      </div>
+    </section>
+  </div>
 </main>
 
 <script>
@@ -413,12 +482,36 @@
   const TABS = ['colour', 'scenes', 'music', 'shows'];
   const SETTINGS_KEY = 'led-lights-settings';
   const SHOWS_KEY = 'led-lights-shows';
-  // Dimmer rim: angles clockwise from 12 o'clock. Off at 210° (bottom left), Max 300° further round.
+  // One-off commands are written with a delivery confirmation; slider and music streams aren't,
+  // so they never wait. Without it, a light can silently drop a command sent amid a burst of others.
+  const CONFIRMED_KINDS = new Set(['power', 'mode', 'mic']);
+  // Dimmer rim: angles clockwise from 12 o'clock. Min at 210° (bottom left), Max 300° further round.
+  // Brightness runs 1–100: the rim never switches the lights off.
   const RIM_START = 210;
   const RIM_SWEEP = 300;
   const MAX_RECORD_MS = 10 * 60 * 1000;
-  // "Smooth" playback fades into each recorded change over at most this long.
+  // "Smooth" playback fades into each recorded change over at most this long (in replay time,
+  // so it stretches along with a slowed-down replay).
   const FADE_MS = 500;
+  // A replay can be stretched to play over at most 2 hours, and sped up to 20×.
+  const MAX_LENGTH_MS = 2 * 60 * 60 * 1000;
+  const MAX_SPEED = 20;
+  const SMOOTHING_LABELS = { exact: 'As recorded', smooth: 'Smooth', extra: 'Extra smooth' };
+
+  // Colour sequences: colours linked by timed changes. A curve shapes the timing of each change;
+  // a path chooses how the colour itself travels.
+  const MAX_SEQ_STOPS = 12;
+  const MAX_LINK_MS = 60 * 60 * 1000;
+  const CURVES = { linear: 'Linear', easeIn: 'Ease in', easeOut: 'Ease out', smooth: 'Smooth', step: 'Step' };
+  const EASE = {
+    linear: (f) => f,
+    easeIn: (f) => f ** 3,
+    easeOut: (f) => 1 - (1 - f) ** 3,
+    smooth: (f) => f * f * (3 - 2 * f),
+    step: (f) => (f < 1 ? 0 : 1),
+  };
+  const PATHS = { blend: 'Blend', short: 'Short way round', long: 'Long way round', dark: 'Through dark' };
+  const DEFAULT_LINK = { ms: 3000, curve: 'smooth', path: 'short' };
 
   // Features that can be turned off in Settings. All are on by default; `needs` lists
   // features that must also be on.
@@ -428,6 +521,7 @@
     { key: 'music', group: 'Music', name: 'Music reactive lights', desc: "Lights react to music, using their own mics or this phone's mic." },
     { key: 'replays', group: 'Replays', name: 'Replays', desc: 'Keep recorded colour changes and play them back, in the Replays tab.' },
     { key: 'record', group: 'Replays', name: 'Record colour changes', desc: 'Adds the ● Record colour changes button to the Colour tab.', needs: ['replays'] },
+    { key: 'sequences', group: 'Replays', name: 'Colour sequences', desc: 'Build a replay from colours you pick, with timed, curved changes between them.', needs: ['replays'] },
     { key: 'diagnostics', group: 'Advanced', name: 'Diagnostics', desc: 'Shows the scanner, command tester and log at the bottom of the page.' },
   ];
   const FEATURE_MAP = Object.fromEntries(FEATURES.map((f) => [f.key, f]));
@@ -539,10 +633,8 @@
   // True while some light is waiting for a change, so the result can be shown once it settles.
   let syncActive = false;
   let syncHideTimer = null;
-  // The colour and brightness shown in the controls; brightness 0 means the lights are off.
+  // The colour and brightness (1–100) shown in the controls.
   const current = { h: 0, s: 1, b: 100 };
-  // Set when the lights were switched off (All off, or brightness taken to Off).
-  let poweredOff = false;
   let wakeLock = null;
 
   function loadJson(key, fallback) {
@@ -553,12 +645,14 @@
     }
   }
 
+  // smoothing, speed and repeat are the playback settings used last: new replays start with
+  // them (at 1× speed), and replays saved before per-replay settings existed inherit them.
   const settings = {
-    wheel: false, smoothing: 'smooth', speed: 1, repeat: false, features: {}, collapsed: {},
+    wheel: false, smoothing: 'smooth', speed: 1, repeat: false, repeatAll: false, features: {}, collapsed: {},
     ...loadJson(SETTINGS_KEY, {}),
   };
-  if (!['exact', 'smooth', 'extra'].includes(settings.smoothing)) settings.smoothing = 'smooth';
-  if (![0.5, 1, 2].includes(settings.speed)) settings.speed = 1;
+  if (!SMOOTHING_LABELS[settings.smoothing]) settings.smoothing = 'smooth';
+  if (!(settings.speed > 0 && settings.speed <= MAX_SPEED)) settings.speed = 1;
   ['features', 'collapsed'].forEach((key) => {
     if (!settings[key] || typeof settings[key] !== 'object') settings[key] = {};
   });
@@ -567,7 +661,13 @@
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* settings are a convenience */ }
   }
 
-  // A show is { id, name, created, duration, events: [[ms, hue 0-359, saturation 0-1000, brightness 0-100], ...] }.
+  // A replay ("show") is either recorded:
+  //   { id, name, created, duration, play, events: [[ms, hue 0-359, saturation 0-1000, brightness 0-100], ...] }
+  // or a colour sequence:
+  //   { id, name, created, duration, play, type: 'sequence',
+  //     stops: [{ h, s 0-1000, b 1-100, hold ms }], links: [{ ms, curve, path }], loop: link | null }
+  // play = { smoothing, speed, repeat } is remembered per replay.
+  const segCache = new WeakMap();
   const storedShows = loadJson(SHOWS_KEY, []);
   let shows = (Array.isArray(storedShows) ? storedShows : []).map(cleanShow).filter(Boolean);
   const recorder = { active: false, startedAt: 0, events: [], timer: null, draft: null };
@@ -577,6 +677,11 @@
   };
   // The phone's microphone, open while anything in `users` is listening.
   const mic = { ctx: null, stream: null, analyser: null, bins: null, users: new Set(), starting: null };
+  // The colour-sequence editor: the sequence being edited, which colour and link are open,
+  // and a running preview.
+  const editor = { draft: null, editingId: null, selected: 0, openLink: null, lastLoop: null, preview: null };
+  let mainWheel = null;
+  let seqWheel = null;
 
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -598,7 +703,12 @@
 
   function hexToHsv(color) {
     const n = parseInt(color.slice(1), 16);
-    const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+    return rgbToHs([(n >> 16) & 255, (n >> 8) & 255, n & 255]);
+  }
+
+  // Hue and saturation of an RGB colour (0–255 each); its darkness is ignored.
+  function rgbToHs(rgb) {
+    const [r, g, b] = rgb.map((v) => v / 255);
     const max = Math.max(r, g, b), delta = max - Math.min(r, g, b);
     let h = 0;
     if (delta) {
@@ -879,10 +989,11 @@
         }
         const packets = Array.isArray(entry.bytes[0]) ? entry.bytes : [entry.bytes];
         try {
+          const confirm = CONFIRMED_KINDS.has(kind) && d.writeChar.properties.write;
           for (const bytes of packets) {
             const data = new Uint8Array(bytes);
-            if (d.writeChar.properties.writeWithoutResponse) await d.writeChar.writeValueWithoutResponse(data);
-            else await d.writeChar.writeValue(data);
+            if (!confirm && d.writeChar.properties.writeWithoutResponse) await d.writeChar.writeValueWithoutResponse(data);
+            else await d.writeChar.writeValueWithResponse(data);
           }
           if (!entry.live) d.missed = false;
           if (kind === 'power' || kind === 'test') log(`${nameOf(d)}: ${kind} sent [${packets.map(hex).join(' | ')}]`, 'ok');
@@ -938,13 +1049,7 @@
   }
 
   function setPowerAll(on) {
-    poweredOff = !on;
     sendToAll('power', (p) => p.power(on));
-    // Turning on while the dimmer is at Off would leave the lights dark, so bring brightness back.
-    if (on && !current.b) {
-      setBrightnessUi(100);
-      sendToAll('brightness', (p) => p.brightness(100));
-    }
     log(`All lights ${on ? 'on' : 'off'}.`);
   }
 
@@ -1031,7 +1136,7 @@
     releaseMic('pattern');
     releaseAwake();
     $('#meter-fill').style.width = '0%';
-    if (current.b) sendToAll('brightness', (p) => p.brightness(current.b));
+    sendToAll('brightness', (p) => p.brightness(current.b));
     log('Stopped listening.');
   }
 
@@ -1097,7 +1202,6 @@
 
     $('#meter-fill').style.width = `${Math.round(x * 100)}%`;
     const max = current.b;
-    if (!max) return; // Dimmer at Off: the lights stay off.
     const min = Math.max(1, Math.round(max * 0.05));
     const pct = Math.round(min + x * (max - min));
     if (audio.sentHue === null || Math.abs(h - audio.sentHue) >= 4 || s !== audio.sentSat) {
@@ -1458,39 +1562,21 @@
     current.h = h;
     current.s = s;
     $('#color').value = rgbToHex(hsvToRgb(h, s, 1));
-    const thumb = $('#wheel-thumb');
-    const rad = (h * Math.PI) / 180;
-    thumb.style.left = `${50 + 50 * s * Math.sin(rad)}%`;
-    thumb.style.top = `${50 - 50 * s * Math.cos(rad)}%`;
-    thumb.style.background = $('#color').value;
-    $('#wheel').style.setProperty('--rim-colour', $('#color').value);
+    if (mainWheel) mainWheel.setColour(h, s);
   }
 
   function setBrightnessUi(b) {
     current.b = b;
     $('#brightness').value = b;
-    $('#brightness-value').textContent = b ? `${b.toFixed(1)}%` : 'Off';
-    const rad = ((RIM_START + (b / 100) * RIM_SWEEP) * Math.PI) / 180;
-    const thumb = $('#rim-thumb');
-    thumb.style.left = `calc(50% + (${Math.sin(rad).toFixed(4)}) * (50% - var(--rim) / 2))`;
-    thumb.style.top = `calc(50% - (${Math.cos(rad).toFixed(4)}) * (50% - var(--rim) / 2))`;
+    $('#brightness-value').textContent = `${b.toFixed(1)}%`;
+    if (mainWheel) mainWheel.setBrightness(b);
   }
 
-  // A brightness chosen on the slider or rim. 0 means off: the lights get a real off
-  // command, and coming back up turns them on again.
+  // A brightness chosen on the slider or rim, 1–100. It never switches the lights off.
   function applyBrightness(b) {
     setBrightnessUi(b);
     if (mode === 'show') pausePlayer();
     recordState();
-    if (!b) {
-      if (!poweredOff) sendToAll('power', (p) => p.power(false));
-      poweredOff = true;
-      return;
-    }
-    if (poweredOff) {
-      poweredOff = false;
-      sendToAll('power', (p) => p.power(true));
-    }
     // While the phone mic is listening, brightness is the maximum and the listener sends it.
     if (mode !== 'phonemic') sendToAll('brightness', (p) => p.brightness(b));
   }
@@ -1515,18 +1601,32 @@
   const pickColourThrottled = throttled(pickColour);
   const applyBrightnessThrottled = throttled(applyBrightness);
 
-  function updateWheelVisibility() {
-    const useWheel = TOUCH || settings.wheel;
-    $('#wheel').hidden = !useWheel;
-    $('#color').hidden = useWheel;
-  }
-
-  function setupWheel() {
-    const wheel = $('#wheel');
+  // A colour wheel with its dimmer rim. While dragging it calls onColour(h, s) or onBrightness(b);
+  // setColour and setBrightness move its thumbs without calling them.
+  function makeWheel(root, { onColour, onBrightness }) {
+    const thumb = root.querySelector('.wheel-thumb');
+    const rimThumb = root.querySelector('.rim-thumb');
     let dragging = null; // 'disc' or 'rim' for the current drag
-    const pick = (e) => {
-      const rect = wheel.getBoundingClientRect();
-      const style = getComputedStyle(wheel);
+    let rimValue = 100;
+    const api = {
+      setColour(h, s) {
+        const colour = rgbToHex(hsvToRgb(h, s, 1));
+        const rad = (h * Math.PI) / 180;
+        thumb.style.left = `${50 + 50 * s * Math.sin(rad)}%`;
+        thumb.style.top = `${50 - 50 * s * Math.cos(rad)}%`;
+        thumb.style.background = colour;
+        root.style.setProperty('--rim-colour', colour);
+      },
+      setBrightness(b) {
+        rimValue = b;
+        const rad = ((RIM_START + ((b - 1) / 99) * RIM_SWEEP) * Math.PI) / 180;
+        rimThumb.style.left = `calc(50% + (${Math.sin(rad).toFixed(4)}) * (50% - var(--rim) / 2))`;
+        rimThumb.style.top = `calc(50% - (${Math.cos(rad).toFixed(4)}) * (50% - var(--rim) / 2))`;
+      },
+    };
+    const pick = (e, first) => {
+      const rect = root.getBoundingClientRect();
+      const style = getComputedStyle(root);
       const rim = parseFloat(style.getPropertyValue('--rim')) || 28;
       const gap = parseFloat(style.getPropertyValue('--gap')) || 10;
       const radius = rect.width / 2;
@@ -1536,32 +1636,53 @@
       // Angle clockwise from the top, matching the conic gradients: red at 12 o'clock.
       const angle = ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360;
       const rel = (angle - RIM_START + 360) % 360;
-      if (!dragging) {
+      if (first) {
         if (dist < radius - rim - gap / 2) dragging = 'disc';
         else if (rel <= RIM_SWEEP) dragging = 'rim';
-        else return; // the gap between Off and Max
+        else return; // the gap between Min and Max
       }
       if (dragging === 'rim') {
-        // Dragged past either end: stick to the nearer end.
-        const v = rel <= RIM_SWEEP ? rel / RIM_SWEEP : (rel < RIM_SWEEP + (360 - RIM_SWEEP) / 2 ? 1 : 0);
-        const b = Math.round(v * 100);
-        setBrightnessUi(b);
-        applyBrightnessThrottled(b);
+        const last = (rimValue - 1) / 99;
+        let v = rel <= RIM_SWEEP ? rel / RIM_SWEEP : null;
+        // Past either end, or a jump across the gap mid-drag: stay at the end the drag came from.
+        if (v === null || (!first && Math.abs(v - last) > 0.5)) v = last > 0.5 ? 1 : 0;
+        const b = Math.round(1 + v * 99);
+        api.setBrightness(b);
+        onBrightness(b);
       } else {
         const s = Math.min(1, dist / (radius - rim - gap));
-        showColour(angle, s);
-        pickColourThrottled(angle, s);
+        api.setColour(angle, s);
+        onColour(angle, s);
       }
     };
-    wheel.addEventListener('pointerdown', (e) => {
+    root.addEventListener('pointerdown', (e) => {
       dragging = null;
-      pick(e);
-      if (dragging) wheel.setPointerCapture(e.pointerId);
+      pick(e, true);
+      if (dragging) root.setPointerCapture(e.pointerId);
     });
-    wheel.addEventListener('pointermove', (e) => { if (dragging) pick(e); });
-    wheel.addEventListener('pointerup', () => { dragging = null; });
-    wheel.addEventListener('pointercancel', () => { dragging = null; });
+    root.addEventListener('pointermove', (e) => { if (dragging) pick(e, false); });
+    root.addEventListener('pointerup', () => { dragging = null; });
+    root.addEventListener('pointercancel', () => { dragging = null; });
+    return api;
+  }
 
+  function updateWheelVisibility() {
+    const useWheel = TOUCH || settings.wheel;
+    $('#wheel').hidden = !useWheel;
+    $('#color').hidden = useWheel;
+  }
+
+  function setupWheel() {
+    mainWheel = makeWheel($('#wheel'), {
+      onColour: (h, s) => {
+        showColour(h, s);
+        pickColourThrottled(h, s);
+      },
+      onBrightness: (b) => {
+        setBrightnessUi(b);
+        applyBrightnessThrottled(b);
+      },
+    });
     $('#wheel-toggle').hidden = TOUCH;
     $('#opt-wheel').checked = settings.wheel;
     $('#opt-wheel').addEventListener('change', (e) => {
@@ -1577,9 +1698,34 @@
 
   // ---- Recorder ----
 
+  // m:ss, or h:mm:ss from an hour up.
   function fmtTime(ms) {
     const total = Math.floor(ms / 1000);
-    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+    const pad = (n) => String(n).padStart(2, '0');
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    return h ? `${h}:${pad(m)}:${pad(total % 60)}` : `${m}:${pad(total % 60)}`;
+  }
+
+  // Short durations for sequence links and holds: "3 s", "2.5 s", or m:ss from a minute up.
+  // `bare` leaves off the " s" for input boxes.
+  function fmtSeconds(ms, bare = false) {
+    if (ms >= 60000) return fmtTime(ms);
+    const s = String(Number((ms / 1000).toFixed(1)));
+    return bare ? s : `${s} s`;
+  }
+
+  // "1:00", "1:02:03", "90" or "90s" (seconds), "2m", "1.5h" → milliseconds, or null.
+  function parseLength(text) {
+    const s = String(text).trim().toLowerCase().replace(',', '.');
+    const unit = /^(\d+(?:\.\d+)?)\s*(h|m|s)?$/.exec(s);
+    if (unit) return Number(unit[1]) * { h: 3600000, m: 60000, s: 1000 }[unit[2] || 's'];
+    if (/^\d+(:\d{1,2}){1,2}$/.test(s)) return s.split(':').reduce((acc, part) => acc * 60 + Number(part), 0) * 1000;
+    return null;
+  }
+
+  function formatSpeed(v) {
+    return String(Number(v.toPrecision(3)));
   }
 
   function fmtDate(date, withTime = false) {
@@ -1644,7 +1790,7 @@
   function saveRecording() {
     if (!recorder.draft) return;
     const name = $('#rec-name').value.trim().slice(0, 80) || `Replay ${fmtDate(new Date(), true)}`;
-    const show = { id: newId(), name, created: Date.now(), ...recorder.draft };
+    const show = { id: newId(), name, created: Date.now(), ...recorder.draft, play: newPlay() };
     shows.unshift(show);
     if (!persistShows()) {
       shows.shift();
@@ -1666,23 +1812,69 @@
 
   // ---- Shows library ----
 
-  // Makes a stored or imported show safe to use: numbers clamped, events sorted.
+  // Makes a stored or imported replay safe to use: numbers clamped, events sorted, settings filled in.
   function cleanShow(x) {
-    if (!x || typeof x.name !== 'string' || !Array.isArray(x.events)) return null;
+    if (!x || typeof x.name !== 'string') return null;
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Math.round(Number(v)) || 0));
-    const events = x.events
-      .filter((e) => Array.isArray(e) && e.length === 4 && e.every((v) => Number.isFinite(Number(v))))
-      .map(([t, h, s, b]) => [clamp(t, 0, MAX_RECORD_MS), clamp(h, 0, 359), clamp(s, 0, 1000), clamp(b, 0, 100)])
-      .sort((a, b) => a[0] - b[0]);
-    if (!events.length) return null;
-    const last = events[events.length - 1][0];
-    return {
+    const base = {
       id: typeof x.id === 'string' && x.id ? x.id.slice(0, 40) : newId(),
       name: x.name.trim().slice(0, 80) || 'Untitled replay',
       created: Number.isFinite(x.created) ? x.created : Date.now(),
-      duration: clamp(x.duration, Math.max(1000, last), MAX_RECORD_MS),
-      events,
     };
+    let show;
+    if (x.type === 'sequence') {
+      if (!Array.isArray(x.stops) || x.stops.length < 2) return null;
+      const cleanLink = (l) => (l && typeof l === 'object'
+        ? { ms: clamp(l.ms, 100, MAX_LINK_MS), curve: CURVES[l.curve] ? l.curve : DEFAULT_LINK.curve, path: PATHS[l.path] ? l.path : DEFAULT_LINK.path }
+        : null);
+      const stops = x.stops.slice(0, MAX_SEQ_STOPS).map((s) => ({
+        h: clamp(s && s.h, 0, 359), s: clamp(s && s.s, 0, 1000), b: clamp(s && s.b, 1, 100), hold: clamp(s && s.hold, 0, MAX_LINK_MS),
+      }));
+      const links = stops.slice(1).map((_, i) => cleanLink(Array.isArray(x.links) && x.links[i]) || { ...DEFAULT_LINK });
+      show = { ...base, type: 'sequence', stops, links, loop: cleanLink(x.loop) };
+      show.duration = sequenceDuration(show);
+    } else {
+      if (!Array.isArray(x.events)) return null;
+      const events = x.events
+        .filter((e) => Array.isArray(e) && e.length === 4 && e.every((v) => Number.isFinite(Number(v))))
+        .map(([t, h, s, b]) => [clamp(t, 0, MAX_RECORD_MS), clamp(h, 0, 359), clamp(s, 0, 1000), clamp(b, 0, 100)])
+        .sort((a, b) => a[0] - b[0]);
+      if (!events.length) return null;
+      const last = events[events.length - 1][0];
+      show = { ...base, duration: clamp(x.duration, Math.max(1000, last), MAX_RECORD_MS), events };
+    }
+    show.play = cleanPlay(x.play, show.duration);
+    return show;
+  }
+
+  // A replay's playback settings. Replays saved before these existed get the settings used last.
+  function cleanPlay(p, duration) {
+    const play = p && typeof p === 'object' ? p : {};
+    return {
+      smoothing: SMOOTHING_LABELS[play.smoothing] ? play.smoothing : settings.smoothing,
+      speed: clampSpeed(Number(play.speed) || settings.speed, duration),
+      repeat: typeof play.repeat === 'boolean' ? play.repeat : settings.repeat,
+    };
+  }
+
+  function newPlay() {
+    return { smoothing: settings.smoothing, speed: 1, repeat: settings.repeat };
+  }
+
+  // Slowest: stretched to 2 hours (or to its own length, if it's longer). Fastest: 20×.
+  function clampSpeed(v, duration) {
+    const min = duration / Math.max(MAX_LENGTH_MS, duration);
+    return Math.min(MAX_SPEED, Math.max(min, v > 0 ? v : 1));
+  }
+
+  // "0:03 → plays 1:00 · Smooth · Repeat"
+  function playSummary(show) {
+    const { speed, smoothing, repeat } = show.play;
+    return [
+      fmtTime(show.duration) + (speed !== 1 ? ` → plays ${fmtTime(show.duration / speed)}` : ''),
+      show.type === 'sequence' ? null : SMOOTHING_LABELS[smoothing],
+      repeat ? 'Repeat' : null,
+    ].filter(Boolean).join(' · ');
   }
 
   function persistShows() {
@@ -1706,12 +1898,14 @@
       const id = esc(show.id);
       const isCurrent = player.show && player.show.id === show.id;
       const active = isCurrent && (player.playing || player.countdown);
+      const sequence = show.type === 'sequence';
       return `<div class="show${isCurrent ? ' playing' : ''}">
-        <div class="show-head"><span class="name">${esc(show.name)}</span>
-          <span class="hint">${fmtTime(show.duration)} · ${fmtDate(new Date(show.created))}</span></div>
+        <div class="show-head"><span class="name">${esc(show.name)}${sequence ? '<span class="badge">Sequence</span>' : ''}</span>
+          <span class="hint">${esc(playSummary(show))} · ${fmtDate(new Date(show.created))}</span></div>
         <canvas class="ribbon" data-ribbon="${id}"></canvas>
         <div class="row">
           <button data-show-play="${id}">${active ? '❚❚ Pause' : '▶ Replay'}</button>
+          ${sequence && featureOn('sequences') ? `<button class="secondary" data-show-edit="${id}">✎ Edit</button>` : ''}
           <button class="secondary" data-show-rename="${id}">Rename</button>
           <button class="secondary" data-show-delete="${id}">Delete</button>
         </div>
@@ -1724,8 +1918,8 @@
     requestAnimationFrame(drawAllRibbons);
   }
 
-  // Colour ribbon: the show's colours left to right (darker where dimmed, black when off),
-  // with brightness drawn as a white line and an optional playhead.
+  // Colour ribbon: the replay's colours left to right (darker where dimmed), with brightness
+  // drawn as a white line and an optional playhead.
   function drawRibbon(canvas, show, playhead) {
     const w = canvas.clientWidth;
     const ht = canvas.clientHeight;
@@ -1738,15 +1932,12 @@
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, ht);
-    const ev = show.events;
     const cols = Math.max(1, Math.round(w));
     const ys = [];
-    let i = 0;
     for (let x = 0; x < cols; x++) {
-      const t = ((x + 0.5) / cols) * show.duration;
-      while (i + 1 < ev.length && ev[i + 1][0] <= t) i++;
-      const [, hue, sat, b] = ev[i];
-      ctx.fillStyle = b ? rgbToHex(hsvToRgb(hue, sat / 1000, 0.3 + 0.7 * (b / 100))) : '#000';
+      const st = stateAt(show, ((x + 0.5) / cols) * show.duration, 'exact');
+      const b = Math.max(1, st.b);
+      ctx.fillStyle = rgbToHex(hsvToRgb(st.h, st.s, 0.3 + 0.7 * (b / 100)));
       ctx.fillRect(x, 0, 1.5, ht);
       ys.push(ht - 3 - (b / 100) * (ht - 6));
     }
@@ -1776,7 +1967,7 @@
   function renameShow(id) {
     const show = findShow(id);
     if (!show) return;
-    const name = window.prompt('Rename show', show.name);
+    const name = window.prompt('Rename replay', show.name);
     if (name === null || !name.trim()) return;
     show.name = name.trim().slice(0, 80);
     persistShows();
@@ -1846,6 +2037,7 @@
   }
 
   function stateAt(show, t, smoothing) {
+    if (show.type === 'sequence') return sequenceState(show, t);
     if (smoothing === 'extra' && player.samples && player.show === show) {
       return player.samples[Math.min(player.samples.length - 1, Math.max(0, Math.round(t / 50)))];
     }
@@ -1891,29 +2083,25 @@
     });
   }
 
-  // Sends the show's state for this moment, only what changed. Brightness 0 switches the lights off.
-  function applyShowState(state) {
-    const pct = Math.round(state.b);
-    const on = pct > 0;
-    const last = player.last || (player.last = {});
-    if (on !== last.on) {
-      sendToAll('power', (p) => p.power(on), true);
-      poweredOff = !on;
+  // Sends the replay's state for this moment, only what changed. `tracker.last` remembers what was
+  // sent; the player and the sequence editor's preview each keep their own.
+  function applyShowState(state, tracker = player) {
+    // Brightness 0 only appears in recordings from before the dimmer stopped at 1%.
+    const pct = Math.max(1, Math.round(state.b));
+    const last = tracker.last || (tracker.last = {});
+    // Make sure the lights are on whenever a replay starts or resumes.
+    if (!last.started) sendToAll('power', (p) => p.power(true), true);
+    const hueMoved = !last.started || Math.abs(((state.h - last.h + 540) % 360) - 180) >= 1;
+    if (hueMoved || Math.abs(state.s - last.s) >= 0.01) {
+      setColorAll(state.h, state.s, true);
+      last.h = state.h;
+      last.s = state.s;
     }
-    if (on) {
-      const fresh = last.on !== true;
-      const hueMoved = fresh || Math.abs(((state.h - last.h + 540) % 360) - 180) >= 1;
-      if (hueMoved || Math.abs(state.s - last.s) >= 0.01) {
-        setColorAll(state.h, state.s, true);
-        last.h = state.h;
-        last.s = state.s;
-      }
-      if (fresh || pct !== last.b) {
-        sendToAll('brightness', (p) => p.brightness(pct), true);
-        last.b = pct;
-      }
+    if (!last.started || pct !== last.b) {
+      sendToAll('brightness', (p) => p.brightness(pct), true);
+      last.b = pct;
     }
-    last.on = on;
+    last.started = true;
     showColour(state.h, state.s);
     setBrightnessUi(pct);
   }
@@ -1926,19 +2114,21 @@
     }
     player.index = index;
     player.show = show;
-    player.samples = settings.smoothing === 'extra' ? buildExtraSmooth(show) : null;
+    player.samples = show.type !== 'sequence' && show.play.smoothing === 'extra' ? buildExtraSmooth(show) : null;
     player.pos = 0;
     player.last = null;
     return true;
   }
 
-  // Starts a list of shows after a 3-2-1 countdown, so the song can be started at the same moment.
+  // Starts a list of replays after a 3-2-1 countdown, so the song can be started at the same moment.
+  // Each one plays with its own settings.
   function playQueue(ids) {
     stopPlayer();
     player.queue = ids;
     if (!loadIntoPlayer(0)) return;
     runCountdown(3);
     renderShows();
+    renderPlayOptions(true);
     updateNowPlaying();
   }
 
@@ -1962,7 +2152,7 @@
     if (player.pos >= player.show.duration) player.pos = 0;
     player.playing = true;
     player.last = null;
-    player.startedAt = performance.now() - player.pos / settings.speed;
+    player.startedAt = performance.now() - player.pos / player.show.play.speed;
     clearInterval(player.timer);
     player.timer = setInterval(playerTick, 50);
     keepAwake();
@@ -2002,16 +2192,23 @@
   function playerTick() {
     const show = player.show;
     if (!show) return;
-    player.pos = Math.min(show.duration, (performance.now() - player.startedAt) * settings.speed);
-    applyShowState(stateAt(show, player.pos, settings.smoothing));
+    player.pos = Math.min(show.duration, (performance.now() - player.startedAt) * show.play.speed);
+    applyShowState(stateAt(show, player.pos, show.play.smoothing));
     updateNowPlaying();
     if (player.pos >= show.duration) showEnded();
   }
 
+  // A single replay repeats if its own Repeat is on; a "Replay all" list repeats with Repeat the list.
   function showEnded() {
+    const single = player.queue.length === 1;
+    if (single && player.show.play.repeat) {
+      player.pos = 0;
+      player.startedAt = performance.now();
+      return;
+    }
     let next = player.index + 1;
     if (next >= player.queue.length) {
-      if (!settings.repeat) {
+      if (single || !settings.repeatAll) {
         log(`Finished "${player.show.name}".`);
         stopPlayer();
         return;
@@ -2021,6 +2218,7 @@
     if (!loadIntoPlayer(next)) return;
     player.startedAt = performance.now();
     renderShows();
+    renderPlayOptions(true);
   }
 
   function toggleShow(id) {
@@ -2036,7 +2234,7 @@
     if (!player.show || !Number.isFinite(pos)) return;
     player.pos = Math.min(player.show.duration, Math.max(0, pos));
     player.last = null;
-    if (player.playing) player.startedAt = performance.now() - player.pos / settings.speed;
+    if (player.playing) player.startedAt = performance.now() - player.pos / player.show.play.speed;
     updateNowPlaying();
   }
 
@@ -2049,9 +2247,400 @@
     $('#np-name').textContent = player.queue.length > 1
       ? `${player.show.name} (${(player.index + 1).toLocaleString()} of ${player.queue.length.toLocaleString()})`
       : player.show.name;
-    $('#np-time').textContent = `${fmtTime(player.pos)} / ${fmtTime(player.show.duration)}`;
+    // Times as they play, so a stretched replay shows its stretched length.
+    const speed = player.show.play.speed;
+    $('#np-time').textContent = `${fmtTime(player.pos / speed)} / ${fmtTime(player.show.duration / speed)}`;
     $('#btn-np-toggle').textContent = player.playing || player.countdown ? '❚❚ Pause' : '▶ Resume';
     drawRibbon($('#np-ribbon'), player.show, player.pos);
+  }
+
+  // ---- Per-replay playback settings ----
+
+  // Fills the Now playing options from the playing replay. Boxes being typed in are left alone
+  // unless `force` is set.
+  function renderPlayOptions(force = false) {
+    const show = player.show;
+    if (!show) return;
+    const { smoothing, speed, repeat } = show.play;
+    const queue = player.queue.length > 1;
+    const length = show.duration / speed;
+    const setValue = (sel, value) => {
+      if (force || document.activeElement !== $(sel)) $(sel).value = value;
+    };
+    $('#np-smooth-box').hidden = show.type === 'sequence';
+    $('#np-smooth').value = smoothing;
+    $('#np-speeds').querySelectorAll('[data-speed]').forEach((c) => c.classList.toggle('active', Number(c.dataset.speed) === speed));
+    setValue('#np-speed', formatSpeed(speed));
+    setValue('#np-length', fmtTime(length));
+    $('#np-speed-note').textContent = `${show.type === 'sequence' ? 'The sequence' : 'The recording'} is ${fmtSeconds(show.duration)}; `
+      + `at ${formatSpeed(speed)}× it plays over ${fmtTime(length)}.`;
+    $('#np-repeat-label').textContent = queue ? 'Repeat the list' : 'Repeat this replay';
+    $('#np-repeat').checked = queue ? settings.repeatAll : repeat;
+  }
+
+  // Changes the playing replay's settings without losing its place, and saves them with the
+  // replay and as the settings used last.
+  function setPlaySettings(changes) {
+    const show = player.show;
+    if (!show) return;
+    Object.assign(show.play, changes);
+    show.play.speed = clampSpeed(show.play.speed, show.duration);
+    if ('smoothing' in changes) {
+      settings.smoothing = show.play.smoothing;
+      player.samples = show.type !== 'sequence' && show.play.smoothing === 'extra' ? buildExtraSmooth(show) : null;
+      player.last = null;
+    }
+    if ('repeat' in changes) settings.repeat = show.play.repeat;
+    if (player.playing) player.startedAt = performance.now() - player.pos / show.play.speed;
+    saveSettings();
+    persistShows();
+    renderShows();
+    renderPlayOptions(true);
+    updateNowPlaying();
+  }
+
+  // ---- Colour sequences ----
+
+  function stopState(stop) {
+    return { h: stop.h, s: stop.s / 1000, b: stop.b };
+  }
+
+  function sequenceDuration(seq) {
+    return seq.stops.reduce((t, stop) => t + stop.hold, 0)
+      + seq.links.reduce((t, link) => t + link.ms, 0)
+      + (seq.loop ? seq.loop.ms : 0);
+  }
+
+  // The sequence as a timeline: hold on each colour, then travel to the next one (and from the
+  // last back to the first, if it loops).
+  function sequenceSegments(seq) {
+    let segs = segCache.get(seq);
+    if (segs) return segs;
+    segs = [];
+    let t = 0;
+    seq.stops.forEach((stop, i) => {
+      if (stop.hold > 0) {
+        segs.push({ start: t, end: t + stop.hold, from: stop, to: stop, link: null });
+        t += stop.hold;
+      }
+      const link = i < seq.links.length ? seq.links[i] : seq.loop;
+      if (link) {
+        segs.push({ start: t, end: t + link.ms, from: stop, to: seq.stops[(i + 1) % seq.stops.length], link });
+        t += link.ms;
+      }
+    });
+    segCache.set(seq, segs);
+    return segs;
+  }
+
+  function sequenceState(seq, t) {
+    const segs = sequenceSegments(seq);
+    const seg = segs.find((s) => t < s.end) || segs[segs.length - 1];
+    if (!seg) return stopState(seq.stops[0]);
+    if (!seg.link) return stopState(seg.from);
+    const f = Math.min(1, Math.max(0, (t - seg.start) / (seg.end - seg.start)));
+    return travel(stopState(seg.from), stopState(seg.to), EASE[seg.link.curve](f), seg.link.path);
+  }
+
+  // The colour `e` of the way (0–1) from a to b along a path.
+  function travel(a, b, e, path) {
+    if (path === 'dark') {
+      // Fade the first colour down to the minimum, then bring the second one up.
+      return e < 0.5
+        ? { h: a.h, s: a.s, b: a.b + (1 - a.b) * e * 2 }
+        : { h: b.h, s: b.s, b: 1 + (b.b - 1) * (e - 0.5) * 2 };
+    }
+    const bright = a.b + (b.b - a.b) * e;
+    if (path === 'blend') {
+      // A straight mix of red, green and blue; opposite colours pass through white.
+      const ca = hsvToRgb(a.h, a.s, 1);
+      const cb = hsvToRgb(b.h, b.s, 1);
+      return { ...rgbToHs(ca.map((v, i) => v + (cb[i] - v) * e)), b: bright };
+    }
+    let dh = ((b.h - a.h + 540) % 360) - 180; // the short way round the wheel
+    if (path === 'long') dh = dh > 0 ? dh - 360 : dh + 360;
+    return { h: (a.h + dh * e + 360) % 360, s: a.s + (b.s - a.s) * e, b: bright };
+  }
+
+  // ---- Colour sequence editor ----
+
+  function stopHex(stop) {
+    return rgbToHex(hsvToRgb(stop.h, stop.s / 1000, 0.3 + 0.7 * (stop.b / 100)));
+  }
+
+  // A CSS gradient showing one link's change.
+  function travelGradient(from, to, link) {
+    const colours = Array.from({ length: 9 }, (_, i) => {
+      const st = travel(stopState(from), stopState(to), EASE[link.curve](i / 8), link.path);
+      return rgbToHex(hsvToRgb(st.h, st.s, 0.3 + 0.7 * (st.b / 100)));
+    });
+    return `linear-gradient(90deg, ${colours.join(', ')})`;
+  }
+
+  function linkFor(key) {
+    return key === 'loop' ? editor.draft.loop : editor.draft.links[Number(key)];
+  }
+
+  function openSequenceEditor(id = null) {
+    const existing = id ? findShow(id) : null;
+    pausePlayer();
+    stopSequencePreview();
+    if (existing) {
+      editor.draft = JSON.parse(JSON.stringify(existing));
+    } else {
+      // Starts from the colour picked now, plus a second one a third of the way round the wheel.
+      const h = Math.round(current.h) % 360;
+      editor.draft = {
+        type: 'sequence',
+        name: `Sequence ${fmtDate(new Date(), true)}`,
+        stops: [
+          { h, s: Math.round(current.s * 1000), b: current.b, hold: 0 },
+          { h: (h + 120) % 360, s: 1000, b: current.b, hold: 0 },
+        ],
+        links: [{ ...DEFAULT_LINK }],
+        loop: null,
+      };
+    }
+    Object.assign(editor, { editingId: existing ? existing.id : null, selected: 0, openLink: null, lastLoop: editor.draft.loop, dirty: false });
+    $('#seq-title').textContent = existing ? 'Edit colour sequence' : 'New colour sequence';
+    $('#seq-name').value = editor.draft.name;
+    openView('sequence');
+  }
+
+  function renderSequenceEditor() {
+    const stop = editor.draft.stops[editor.selected];
+    seqWheel.setColour(stop.h, stop.s / 1000);
+    seqWheel.setBrightness(stop.b);
+    sequenceChanged(false);
+  }
+
+  function sequenceChanged(byUser = true) {
+    const d = editor.draft;
+    if (!d) return;
+    if (byUser) editor.dirty = true;
+    segCache.delete(d);
+    d.duration = sequenceDuration(d);
+    renderSequenceList();
+    if (!editor.preview) drawRibbon($('#seq-ribbon'), d, null);
+    $('#seq-total').textContent = `Total ${fmtSeconds(d.duration)}${d.loop ? ' per loop; turn on Repeat when playing it to keep it going' : ''}.`;
+  }
+  const sequenceChangedThrottled = throttled(sequenceChanged);
+
+  function renderSequenceList() {
+    const d = editor.draft;
+    const linkRow = (key, link, from, to) => {
+      const open = editor.openLink === key;
+      const chips = (attr, options, value) => Object.entries(options).map(([k, label]) =>
+        `<button class="chip${value === k ? ' active' : ''}" ${attr}="${key}" data-value="${k}">${label}</button>`).join('');
+      return `<div class="seq-link">
+        <button class="seq-link-head" data-link-toggle="${key}">↓ ${esc(fmtSeconds(link.ms))} · ${CURVES[link.curve]} · ${PATHS[link.path]}
+          <span class="seq-strip" style="background:${travelGradient(from, to, link)}"></span></button>
+        ${open ? `<div class="seq-link-edit">
+          <label>Time (seconds, or m:ss)</label>
+          <input data-link-ms="${key}" value="${esc(fmtSeconds(link.ms, true))}" inputmode="decimal" autocomplete="off">
+          <label>Curve</label><div class="chips">${chips('data-link-curve', CURVES, link.curve)}</div>
+          <label>Colour path</label><div class="chips">${chips('data-link-path', PATHS, link.path)}</div>
+        </div>` : ''}
+      </div>`;
+    };
+    $('#seq-list').innerHTML = d.stops.map((stop, i) => {
+      const last = i === d.stops.length - 1;
+      const row = `<div class="seq-stop${editor.selected === i ? ' selected' : ''}" data-select="${i}">
+        <span class="seq-dot" style="background:${stopHex(stop)}"></span>
+        <span class="grow">Colour ${i + 1} · ${stop.b.toFixed(1)}%</span>
+        <label>Hold <input data-hold="${i}" value="${esc(fmtSeconds(stop.hold, true))}" inputmode="decimal" autocomplete="off"> s</label>
+        <button class="secondary" data-move="${i}" data-dir="-1" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button class="secondary" data-move="${i}" data-dir="1" aria-label="Move down" ${last ? 'disabled' : ''}>↓</button>
+        <button class="secondary" data-remove="${i}" aria-label="Remove" ${d.stops.length <= 2 ? 'disabled' : ''}>✕</button>
+      </div>`;
+      if (!last) return row + linkRow(String(i), d.links[i], stop, d.stops[i + 1]);
+      return row + (d.loop ? linkRow('loop', d.loop, stop, d.stops[0]) : '');
+    }).join('');
+    $('#seq-loop').checked = !!d.loop;
+    $('#btn-seq-add').disabled = d.stops.length >= MAX_SEQ_STOPS;
+  }
+
+  // Editing a colour shows it on the lights, unless a preview is running.
+  function showStopOnLights(stop) {
+    if (editor.preview) return;
+    const st = stopState(stop);
+    setColorAll(st.h, st.s, true);
+    sendToAll('brightness', (p) => p.brightness(st.b), true);
+  }
+  const showStopOnLightsThrottled = throttled(showStopOnLights);
+
+  function selectStop(i) {
+    editor.selected = i;
+    const stop = editor.draft.stops[i];
+    seqWheel.setColour(stop.h, stop.s / 1000);
+    seqWheel.setBrightness(stop.b);
+    showStopOnLights(stop);
+    renderSequenceList();
+  }
+
+  function addStop() {
+    const d = editor.draft;
+    if (d.stops.length >= MAX_SEQ_STOPS) return;
+    const last = d.stops[d.stops.length - 1];
+    d.stops.push({ h: (last.h + 60) % 360, s: last.s, b: last.b, hold: 0 });
+    d.links.push({ ...d.links[d.links.length - 1] });
+    editor.openLink = null;
+    sequenceChanged();
+    selectStop(d.stops.length - 1);
+  }
+
+  // Removing a colour also removes one of its links, joining its neighbours directly.
+  function removeStop(i) {
+    const d = editor.draft;
+    if (d.stops.length <= 2) return;
+    d.stops.splice(i, 1);
+    d.links.splice(Math.min(i, d.links.length - 1), 1);
+    editor.openLink = null;
+    sequenceChanged();
+    selectStop(Math.min(editor.selected, d.stops.length - 1));
+  }
+
+  function startSequencePreview() {
+    enterMode('colour');
+    markActive(null);
+    editor.preview = { startedAt: performance.now(), last: null, timer: setInterval(previewTick, 50) };
+    $('#btn-seq-preview').textContent = '■ Stop preview';
+    previewTick();
+  }
+
+  // The preview loops, picking up edits as they happen.
+  function previewTick() {
+    const d = editor.draft;
+    if (!d || !editor.preview) return;
+    const t = (performance.now() - editor.preview.startedAt) % d.duration;
+    applyShowState(sequenceState(d, t), editor.preview);
+    drawRibbon($('#seq-ribbon'), d, t);
+  }
+
+  function stopSequencePreview() {
+    if (!editor.preview) return;
+    clearInterval(editor.preview.timer);
+    editor.preview = null;
+    $('#btn-seq-preview').textContent = '▶ Preview on lights';
+    if (editor.draft) drawRibbon($('#seq-ribbon'), editor.draft, null);
+  }
+
+  function saveSequence() {
+    const d = editor.draft;
+    if (!d) return;
+    const existing = editor.editingId ? findShow(editor.editingId) : null;
+    const show = cleanShow({
+      ...d,
+      name: $('#seq-name').value.trim() || d.name,
+      id: existing ? existing.id : newId(),
+      created: existing ? existing.created : Date.now(),
+      play: existing ? existing.play : newPlay(),
+    });
+    if (!show) return;
+    const before = shows;
+    shows = existing ? shows.map((s) => (s.id === existing.id ? show : s)) : [show, ...shows];
+    if (!persistShows()) {
+      shows = before;
+      return;
+    }
+    if (existing && player.show && player.show.id === existing.id) stopPlayer();
+    log(`Saved colour sequence "${show.name}" (${fmtSeconds(show.duration)}).`, 'ok');
+    closeSequenceEditor();
+    showTab('shows');
+    renderShows();
+  }
+
+  function closeSequenceEditor() {
+    stopSequencePreview();
+    editor.draft = null;
+    closeView();
+  }
+
+  function cancelSequence() {
+    if (editor.dirty && !window.confirm('Discard the changes to this colour sequence?')) return;
+    closeSequenceEditor();
+  }
+
+  function setupSequenceEditor() {
+    seqWheel = makeWheel($('#seq-wheel'), {
+      onColour: (h, s) => {
+        const stop = editor.draft.stops[editor.selected];
+        stop.h = Math.round(h) % 360;
+        stop.s = Math.round(s * 1000);
+        sequenceChangedThrottled();
+        showStopOnLightsThrottled(stop);
+      },
+      onBrightness: (b) => {
+        const stop = editor.draft.stops[editor.selected];
+        stop.b = b;
+        sequenceChangedThrottled();
+        showStopOnLightsThrottled(stop);
+      },
+    });
+    $('#seq-list').addEventListener('click', (e) => {
+      const d = editor.draft;
+      const move = e.target.closest('[data-move]');
+      const remove = e.target.closest('[data-remove]');
+      const toggle = e.target.closest('[data-link-toggle]');
+      const curve = e.target.closest('[data-link-curve]');
+      const path = e.target.closest('[data-link-path]');
+      if (move) {
+        const i = Number(move.dataset.move);
+        const j = i + Number(move.dataset.dir);
+        [d.stops[i], d.stops[j]] = [d.stops[j], d.stops[i]];
+        editor.selected = j;
+        sequenceChanged();
+      } else if (remove) {
+        removeStop(Number(remove.dataset.remove));
+      } else if (toggle) {
+        editor.openLink = editor.openLink === toggle.dataset.linkToggle ? null : toggle.dataset.linkToggle;
+        renderSequenceList();
+      } else if (curve) {
+        linkFor(curve.dataset.linkCurve).curve = curve.dataset.value;
+        sequenceChanged();
+      } else if (path) {
+        linkFor(path.dataset.linkPath).path = path.dataset.value;
+        sequenceChanged();
+      } else if (!e.target.closest('input, label')) {
+        // Tapping a hold box shouldn't re-draw the list under the keyboard.
+        const stop = e.target.closest('[data-select]');
+        if (stop) selectStop(Number(stop.dataset.select));
+      }
+    });
+    $('#seq-list').addEventListener('change', (e) => {
+      const ms = parseLength(e.target.value);
+      if (e.target.dataset.hold !== undefined) {
+        if (ms !== null) editor.draft.stops[Number(e.target.dataset.hold)].hold = Math.min(MAX_LINK_MS, Math.round(ms));
+      } else if (e.target.dataset.linkMs !== undefined) {
+        if (ms !== null) linkFor(e.target.dataset.linkMs).ms = Math.min(MAX_LINK_MS, Math.max(100, Math.round(ms)));
+      } else {
+        return;
+      }
+      // Re-rendering also puts back the old value if what was typed couldn't be read.
+      sequenceChanged();
+    });
+    $('#seq-loop').addEventListener('change', (e) => {
+      const d = editor.draft;
+      if (e.target.checked) {
+        d.loop = editor.lastLoop || { ...DEFAULT_LINK };
+      } else {
+        editor.lastLoop = d.loop;
+        d.loop = null;
+        if (editor.openLink === 'loop') editor.openLink = null;
+      }
+      sequenceChanged();
+    });
+    $('#seq-name').addEventListener('input', (e) => {
+      editor.draft.name = e.target.value;
+      editor.dirty = true;
+    });
+    $('#btn-seq-add').addEventListener('click', addStop);
+    $('#btn-seq-preview').addEventListener('click', () => (editor.preview ? stopSequencePreview() : startSequencePreview()));
+    $('#btn-seq-save').addEventListener('click', saveSequence);
+    $('#btn-seq-cancel').addEventListener('click', cancelSequence);
+    $('#btn-seq-back').addEventListener('click', cancelSequence);
+    $('#btn-seq-new').addEventListener('click', () => openSequenceEditor());
+    $('#btn-seq-new-2').addEventListener('click', () => openSequenceEditor());
   }
 
   // ---- Phone microphone ----
@@ -2142,6 +2731,9 @@
     $('.tab[data-tab="shows"]').hidden = !on.replays;
     $('#sec-music-reactive').hidden = !on.music;
     $('.recorder').hidden = !on.record;
+    $('#seq-new-row').hidden = !on.sequences;
+    $('#btn-seq-new-2').hidden = !on.sequences;
+    $('.create').hidden = !on.record && !on.sequences;
     $('#diagnostics').hidden = !on.diagnostics;
     if (!on.music && (mode === 'phonemic' || mode === 'devicemic')) stopMusic();
     if (!on.record && recorder.active) {
@@ -2153,14 +2745,43 @@
     if (!on.catchup) lights().forEach((d) => { if (!d.writeChar && d.pending) d.pending.clear(); });
     const active = document.querySelector('.tab.active');
     if (!active || active.hidden) showTab('colour');
+    renderShows();
     queueRender();
   }
 
+  // Settings and the sequence editor are separate screens, opened through the URL hash so the
+  // phone's back button closes them.
+  let viewOpenedFromPage = false;
+
+  function openView(name) {
+    viewOpenedFromPage = true;
+    if (location.hash === `#${name}`) showView();
+    else location.hash = name;
+  }
+
+  function closeView() {
+    if (viewOpenedFromPage) history.back();
+    else location.hash = '';
+    viewOpenedFromPage = false;
+  }
+
   function showView() {
-    const inSettings = location.hash === '#settings';
-    $('#view-main').hidden = inSettings;
-    $('#view-settings').hidden = !inSettings;
-    if (!inSettings) requestAnimationFrame(drawAllRibbons);
+    let view = location.hash.slice(1);
+    // Nothing to edit (for example after a reload on the editor): back to the main screen.
+    if (view === 'sequence' && !editor.draft) {
+      history.replaceState(null, '', location.pathname + location.search);
+      view = '';
+    }
+    // Leaving the editor with the phone's back button discards the unsaved sequence.
+    if (view !== 'sequence' && editor.draft) {
+      stopSequencePreview();
+      editor.draft = null;
+    }
+    $('#view-main').hidden = view === 'settings' || view === 'sequence';
+    $('#view-settings').hidden = view !== 'settings';
+    $('#view-sequence').hidden = view !== 'sequence';
+    if (view === 'sequence') renderSequenceEditor();
+    else if (view !== 'settings') requestAnimationFrame(drawAllRibbons);
   }
 
   function setupSettings() {
@@ -2174,18 +2795,8 @@
       updateFeatureList();
       applyFeatures();
     });
-    // Back returns through history when Settings was opened from the page, so the phone's
-    // back button and this button behave the same.
-    let openedFromPage = false;
-    $('#btn-settings').addEventListener('click', () => {
-      openedFromPage = true;
-      location.hash = 'settings';
-    });
-    $('#btn-settings-back').addEventListener('click', () => {
-      if (openedFromPage) history.back();
-      else location.hash = '';
-      openedFromPage = false;
-    });
+    $('#btn-settings').addEventListener('click', () => openView('settings'));
+    $('#btn-settings-back').addEventListener('click', closeView);
     window.addEventListener('hashchange', showView);
     showView();
   }
@@ -2203,25 +2814,28 @@
   }
 
   function setupShows() {
-    $('#opt-smooth').value = settings.smoothing;
-    $('#opt-speed').value = String(settings.speed);
-    $('#opt-repeat').checked = settings.repeat;
-    $('#opt-smooth').addEventListener('change', (e) => {
-      settings.smoothing = e.target.value;
-      saveSettings();
-      if (player.show) {
-        player.samples = settings.smoothing === 'extra' ? buildExtraSmooth(player.show) : null;
-        player.last = null;
+    $('#np-smooth').addEventListener('change', (e) => setPlaySettings({ smoothing: e.target.value }));
+    $('#np-speeds').addEventListener('click', (e) => {
+      const chip = e.target.closest('[data-speed]');
+      if (chip) setPlaySettings({ speed: Number(chip.dataset.speed) });
+    });
+    $('#np-speed').addEventListener('change', (e) => {
+      const v = Number(e.target.value.replace(',', '.').replace(/[×x\s]/gi, ''));
+      if (v > 0) setPlaySettings({ speed: v });
+      else renderPlayOptions(true);
+    });
+    $('#np-length').addEventListener('change', (e) => {
+      const ms = parseLength(e.target.value);
+      if (ms > 0 && player.show) setPlaySettings({ speed: player.show.duration / ms });
+      else renderPlayOptions(true);
+    });
+    $('#np-repeat').addEventListener('change', (e) => {
+      if (player.queue.length > 1) {
+        settings.repeatAll = e.target.checked;
+        saveSettings();
+      } else {
+        setPlaySettings({ repeat: e.target.checked });
       }
-    });
-    $('#opt-speed').addEventListener('change', (e) => {
-      settings.speed = Number(e.target.value);
-      saveSettings();
-      if (player.playing) player.startedAt = performance.now() - player.pos / settings.speed;
-    });
-    $('#opt-repeat').addEventListener('change', (e) => {
-      settings.repeat = e.target.checked;
-      saveSettings();
     });
     $('#btn-record').addEventListener('click', () => (recorder.active ? stopRecording() : startRecording()));
     $('#btn-rec-save').addEventListener('click', saveRecording);
@@ -2235,9 +2849,11 @@
     });
     $('#show-list').addEventListener('click', (e) => {
       const play = e.target.closest('[data-show-play]');
+      const edit = e.target.closest('[data-show-edit]');
       const rename = e.target.closest('[data-show-rename]');
       const del = e.target.closest('[data-show-delete]');
       if (play) toggleShow(play.dataset.showPlay);
+      if (edit) openSequenceEditor(edit.dataset.showEdit);
       if (rename) renameShow(rename.dataset.showRename);
       if (del) deleteShow(del.dataset.showDelete);
     });
@@ -2319,6 +2935,7 @@
   buildChips();
   setupWheel();
   setupShows();
+  setupSequenceEditor();
   setupSettings();
   setupCollapsibles();
   let savedTab = null;
