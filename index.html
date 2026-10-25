@@ -127,7 +127,24 @@
     #fb-key { flex: 1; min-width: 180px; font-family: ui-monospace, Menlo, monospace; }
     #fb-person { flex: 1; min-width: 160px; }
     #screen-every { max-width: 160px; }
+    .hint.warn { color: var(--warn); }
     #screen-preview { display: block; width: 100%; max-height: 180px; margin-top: 10px; border-radius: 8px; background: #000; }
+    /* Colour equalizers: one upright slider per band of hues, tinted with its colour. */
+    #tune-preset { flex: 1; min-width: 160px; }
+    .eq { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 4px; margin-top: 8px; }
+    .eq-band { --c: #888; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+    .eq input[type=range] { --fill: 0%; -webkit-appearance: none; appearance: none; writing-mode: vertical-lr; direction: rtl;
+                            flex: none; width: 24px; min-width: 0; height: 110px; background: none; cursor: pointer; }
+    .eq input[type=range]::-webkit-slider-runnable-track { width: 6px; border-radius: 3px;
+      background: linear-gradient(to top, var(--c) var(--fill), var(--border) var(--fill)); }
+    .eq input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; margin-left: -6px;
+      border-radius: 50%; border: 2px solid #fff; background: var(--c); }
+    .eq input[type=range]:disabled { opacity: .45; cursor: not-allowed; }
+    .eq-value { font-size: .62rem; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .eq-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--c); }
+    .eq-name { max-width: 100%; overflow: hidden; font-size: .62rem; color: var(--muted); white-space: nowrap; }
+    @media (max-width: 520px) { .eq-name { display: none; } }
+    #tune-live { height: 56px; margin: 10px 0 4px; }
     .topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
     .topbar h1 { margin: 0; }
     details.section { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 12px; }
@@ -273,8 +290,63 @@
             <option value="10000">10 s</option>
             <option value="30000">30 s</option>
           </select>
-          <p class="hint">Big changes, like a cut from ocean to forest, are sent straight away (at most once a second).</p>
+          <label for="screen-gap">Big changes, like a cut from ocean to forest, are sent at most every</label>
+          <div class="row">
+            <input id="screen-gap" type="range" min="0" max="9" step="1">
+            <span id="screen-gap-value" class="value">1 s</span>
+          </div>
+          <p id="screen-gap-note" class="hint"></p>
+          <div id="screen-scan-row">
+            <label for="screen-scan">Look at the screen</label>
+            <select id="screen-scan">
+              <option value="2">2 times a second</option>
+              <option value="5">5 times a second</option>
+              <option value="10">10 times a second</option>
+              <option value="20">20 times a second</option>
+            </select>
+            <p class="hint">Looking more often makes the colour follow the screen more smoothly. It doesn't use more Firebase writes.</p>
+          </div>
         </div>
+        <details id="screen-tune" class="section" data-collapse="screen-tune">
+          <summary>Colour tuning</summary>
+          <p class="hint">How the computer picks the colour. It's saved in Firebase for each person, so you can tune it here on the phone
+            while the computer sends, and the lights change within a second.</p>
+          <label for="tune-preset">Preset</label>
+          <div class="row">
+            <select id="tune-preset"></select>
+            <button id="btn-tune-rename" class="secondary">Rename</button>
+            <button id="btn-tune-delete" class="secondary">Delete</button>
+          </div>
+          <p id="tune-status" class="hint"></p>
+          <label>Colour boost</label>
+          <p class="hint">Turn a colour up to favour it, or down to ignore it. For example, Sky down stops a bluish sky beating green trees.
+            Changing a built-in preset makes your own copy.</p>
+          <div id="tune-boost" class="eq"></div>
+          <canvas id="tune-live" class="ribbon" hidden></canvas>
+          <p id="tune-live-text" class="hint" hidden></p>
+          <label>When there's no colour, show</label>
+          <p class="hint">For grey, white or dark scenes: how much you like each colour. All at 0 shows white.
+            A faint tint on screen tips the choice between favourites.</p>
+          <div id="tune-fav" class="eq"></div>
+          <label for="tune-strength">Strength of that colour</label>
+          <div class="row">
+            <input id="tune-strength" type="range" min="10" max="100" step="5">
+            <span id="tune-strength-value" class="value"></span>
+          </div>
+          <label for="tune-min">Minimum colour</label>
+          <div class="row">
+            <input id="tune-min" type="range" min="1" max="20" step="1">
+            <span id="tune-min-value" class="value"></span>
+          </div>
+          <p class="hint">How much of the screen must be clearly coloured to count. Below that, the colour above is shown.</p>
+          <label for="tune-soften">Softening</label>
+          <div class="row">
+            <input id="tune-soften" type="range" min="0" max="6" step="1">
+            <span id="tune-soften-value" class="value"></span>
+          </div>
+          <p class="hint">How many seconds of screen the colour is based on, so a quick flash doesn't change it.
+            Smoothness, below, is how long the lights take to fade to it.</p>
+        </details>
         <label for="screen-fade">Smoothness</label>
         <div class="row">
           <input id="screen-fade" type="range" min="0" max="3000" step="100" value="800">
@@ -532,7 +604,7 @@
   const PAIRED_KEY = 'led-lights-paired-before';
   // Bumped with every change to this page. Shown under the title, because GitHub Pages takes a
   // few minutes to publish an update.
-  const PAGE_VERSION = '1.3';
+  const PAGE_VERSION = '1.5';
   // Screen colour sync goes through Firestore, so no server of our own. Everything below is an
   // identifier that grants nothing on its own; the apiKey is pasted once on each device and kept in
   // that browser, as in Gym notes. Never run `firebase deploy`: Firebase Hosting would publish the
@@ -550,13 +622,38 @@
   const PEOPLE = ['Prabhashwara', 'Chamuth', 'Test'];
   // `?emulator=<host>` talks to the local Firebase emulators instead, for testing.
   const EMULATOR = new URLSearchParams(location.search).get('emulator');
-  // The computer looks at its screen twice a second. A big jump in colour goes out at once (at
-  // most once a second); smaller drifts wait for the interval picked in the section; an unchanging
-  // screen still checks in every 30 s, and the phone calls it gone after 45 s without news.
-  const SCREEN_SAMPLE_MS = 500;
-  const SCREEN_MIN_GAP_MS = 1000;
+  // The computer looks at its screen at least twice a second. A big jump in colour goes out as
+  // soon as the "at most every" slider allows, which also limits everything else it sends; smaller
+  // drifts wait for the "every" interval; an unchanging screen still checks in every 30 s, and the
+  // phone calls it gone after 45 s without news.
+  const SCREEN_GAP_STEPS = [0.2, 0.25, 0.33, 0.5, 0.75, 1, 1.5, 2, 2.5, 3];
   const SCREEN_HEARTBEAT_MS = 30000;
   const SCREEN_STALE_MS = 45000;
+  // Firestore's free plan: writes per day for the whole project (reads allow 50,000, so writes run
+  // out first). Past it, writes fail until midnight US Pacific time.
+  const FREE_WRITES_PER_DAY = 20000;
+  const QUOTA_TEXT = "Firebase's free daily limit is used up, so screen sync is paused for everyone until midnight US Pacific time.";
+  // Advanced colour detection (a Settings feature): the computer looks at the screen 2–20 times a
+  // second, softens what it sees over time, and judges it by the person's preset, kept in Firestore
+  // at users/<name>/config/screen. Off, the simple detector above runs instead.
+  const SCAN_RATES = [2, 5, 10, 20];
+  const SOFTEN_STEPS = [0, 250, 500, 1000, 2000, 3000, 5000];
+  // The equalizer bands, centred every 30° round the colour wheel from red.
+  const EQ_BANDS = ['Red', 'Orange', 'Yellow', 'Lime', 'Green', 'Mint', 'Cyan', 'Sky', 'Blue', 'Violet', 'Purple', 'Pink'];
+  // A new colour has to beat the one showing by this much to take over, and the same margin applies
+  // between colour and no colour, so two near-equal choices don't flip back and forth.
+  const SCREEN_STICKY = 1.25;
+  const MAX_PRESETS = 20;
+  const TUNE_CACHE_KEY = 'led-lights-tune';
+  const TUNE_LOCKED_TEXT = 'Paste the access key and pick whose lights these are to load the presets.';
+  // A preset: boost 0–3 per band, favourite 0–5 per band (for screens with no colour), strength of
+  // that fallback colour 0.1–1, minimum share of clearly coloured screen 0.01–0.2, softening in ms.
+  const eqFlat = (v) => Array(EQ_BANDS.length).fill(v);
+  const BUILTIN_PRESETS = {
+    neutral: { name: 'Neutral', boost: eqFlat(1), favourite: eqFlat(0), strength: 0.6, minColour: 0.03, soften: 1000 },
+    nature: { name: 'Nature', boost: [1, 1, 1.25, 1.5, 2, 1.25, 0.5, 0.5, 1, 1, 1, 1], favourite: eqFlat(0), strength: 0.6, minColour: 0.03, soften: 1000 },
+    warm: { name: 'Warm', boost: [1.5, 1.5, 1.25, 1, 1, 0.75, 0.5, 0.5, 0.75, 1, 1, 1.25], favourite: [0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], strength: 0.6, minColour: 0.03, soften: 1000 },
+  };
   const TAB_KEY = 'led-lights-tab';
   const TABS = ['colour', 'scenes', 'music', 'shows'];
   const SETTINGS_KEY = 'led-lights-settings';
@@ -598,6 +695,7 @@
     { key: 'scenes', group: 'Lights', name: 'Scenes', desc: 'Built-in light effects such as Rainbow and Strobe, in the Scenes tab.' },
     { key: 'catchup', group: 'Lights', name: 'Catch up reconnecting lights', desc: 'A light that drops out briefly still gets the changes made in the last 20 seconds.' },
     { key: 'screen', group: 'Lights', name: 'Screen colour sync', desc: 'The lights follow the main colour on a computer screen, through the internet.' },
+    { key: 'screenTune', group: 'Lights', name: 'Advanced colour detection', desc: 'Screen colour sync looks at the screen continuously, softens it over time, and follows your colour boost and favourite colours. Off: the simple detector, with white for screens without colour.', needs: ['screen'] },
     { key: 'music', group: 'Music', name: 'Music reactive lights', desc: "Lights react to music, using their own mics or this phone's mic." },
     { key: 'replays', group: 'Replays', name: 'Replays', desc: 'Keep recorded colour changes and play them back, in the Replays tab.' },
     { key: 'record', group: 'Replays', name: 'Record colour changes', desc: 'Adds the ● Record colour changes button to the Colour tab.', needs: ['replays'] },
@@ -729,12 +827,14 @@
   // them (at 1× speed), and replays saved before per-replay settings existed inherit them.
   const settings = {
     wheel: false, smoothing: 'smooth', speed: 1, repeat: false, repeatAll: false,
-    person: '', screenEvery: 3000, features: {}, collapsed: {},
+    person: '', screenEvery: 3000, screenGap: 1, screenScan: 10, features: {}, collapsed: {},
     ...loadJson(SETTINGS_KEY, {}),
   };
   if (!SMOOTHING_LABELS[settings.smoothing]) settings.smoothing = 'smooth';
   if (!PEOPLE.includes(settings.person)) settings.person = '';
   if (![1000, 3000, 5000, 10000, 30000].includes(settings.screenEvery)) settings.screenEvery = 3000;
+  if (!SCREEN_GAP_STEPS.includes(settings.screenGap)) settings.screenGap = 1;
+  if (!SCAN_RATES.includes(settings.screenScan)) settings.screenScan = 10;
   if (!(settings.speed > 0 && settings.speed <= MAX_SPEED)) settings.speed = 1;
   ['features', 'collapsed'].forEach((key) => {
     if (!settings[key] || typeof settings[key] !== 'object') settings[key] = {};
@@ -766,7 +866,15 @@
   let mainWheel = null;
   let seqWheel = null;
   // Screen colour sync: the computer sending its screen's colour, and the phone following it.
-  const screenSend = { stream: null, firebase: null, capture: null, canvas: null, worker: null, busy: false, last: null, sentAt: 0, sent: 0 };
+  const screenSend = {
+    stream: null, firebase: null, capture: null, canvas: null, worker: null, busy: false, writing: false, last: null, sentAt: 0, sent: 0,
+  };
+  // Advanced detection's running picture of the screen: the newest measurement, its softened
+  // average, and the band (or fallback favourite) showing, for the stickiness margin.
+  const screenScan = { measure: null, grabbing: null, soft: null, at: 0, pick: -1, fallback: -1, drawnAt: 0 };
+  // This person's presets, as in Firestore: { active, presets: { id: preset } }. Edits apply at once
+  // and are saved a second after the last change.
+  const screenTune = { person: '', active: 'neutral', presets: {}, unsubscribe: null, saveTimer: null };
   const screenFollow = {
     unsubscribe: null, person: '', from: null, target: null, shown: null, startedAt: 0, heardAt: 0, sentAt: 0,
     brightness: 100, timer: null, last: null,
@@ -2829,6 +2937,8 @@
     const ready = unlocked && !!settings.person;
     $('#btn-screen-follow').disabled = !ready;
     $('#btn-screen-send').disabled = !ready;
+    renderTune();
+    watchTune();
   }
 
   function screenDoc({ db, fs }) {
@@ -2907,6 +3017,456 @@
     return (Math.min(a.s, b.s) > 150 && hueGap(a, b) >= 40) || Math.abs(a.s - b.s) >= 400 || Math.abs(a.b - b.b) >= 25;
   }
 
+  // Simple detection looks at the screen twice a second, or as often as the slider allows sending
+  // if that's faster; advanced detection as often as its own setting says.
+  function screenSampleMs() {
+    return featureOn('screenTune') ? 1000 / settings.screenScan : Math.min(500, settings.screenGap * 1000);
+  }
+
+  // ---- Advanced colour detection ----
+  // Each scan is measured, the measurements are softened over time, and only then is the colour
+  // picked, using the person's preset. See screen-colour-algorithm.md.
+
+  const SCREEN_BINS = { weight: 36, sat: 36, x: 36, y: 36, count: 36, tint: EQ_BANDS.length };
+
+  function newScreenMeasure() {
+    const m = { light: 0 };
+    Object.entries(SCREEN_BINS).forEach(([key, n]) => { m[key] = new Float32Array(n); });
+    return m;
+  }
+
+  // One frame, as shares of the screen in 10° hue bins. Clearly coloured pixels (saturation 20% or
+  // more) weigh saturation² × lightness, so pale colours count much less than vivid ones. Faintly
+  // tinted whites and greys (5–20%) only count towards `tint`, by band, which leans the fallback.
+  function measureScreen(data) {
+    const m = newScreenMeasure();
+    const pixels = data.length / 4;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255;
+      const max = Math.max(r, g, b), delta = max - Math.min(r, g, b);
+      m.light += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      const s = max ? delta / max : 0;
+      if (max < 0.12 || s < 0.05) continue;
+      const { h } = rgbToHs([data[i], data[i + 1], data[i + 2]]);
+      if (s < 0.2) {
+        m.tint[Math.round(h / 30) % EQ_BANDS.length] += 1;
+        continue;
+      }
+      const w = s * s * max;
+      // Bins are centred on multiples of 10°, so every band's centre is a bin of its own.
+      const bin = Math.round(h / 10) % 36;
+      const rad = (h * Math.PI) / 180;
+      m.weight[bin] += w;
+      m.sat[bin] += s * w;
+      m.x[bin] += Math.cos(rad) * w;
+      m.y[bin] += Math.sin(rad) * w;
+      m.count[bin] += 1;
+    }
+    Object.keys(SCREEN_BINS).forEach((key) => { m[key] = m[key].map((v) => v / pixels); });
+    m.light /= pixels;
+    return m;
+  }
+
+  // A running average of the measurements with the preset's softening as its time constant, so it
+  // feels the same at any scan rate. Averaging the hue bins rather than the pixels means a cut from
+  // red to green fades from one to the other, without a yellow that was never on screen.
+  function softenScreen(m, now) {
+    const ms = activePreset().soften;
+    const soft = screenScan.soft;
+    const a = soft && ms ? 1 - Math.exp(-Math.max(0, now - screenScan.at) / ms) : 1;
+    screenScan.at = now;
+    if (a >= 1) {
+      screenScan.soft = { light: m.light, ...Object.fromEntries(Object.keys(SCREEN_BINS).map((key) => [key, m[key].slice()])) };
+      return;
+    }
+    soft.light += a * (m.light - soft.light);
+    Object.keys(SCREEN_BINS).forEach((key) => {
+      for (let i = 0; i < soft[key].length; i++) soft[key][i] += a * (m[key][i] - soft[key][i]);
+    });
+  }
+
+  // The boost for each 10° bin: each band's slider covers the three bins nearest its centre (the
+  // three bars under it in the live view), so a band at 0× is ignored completely.
+  function binBoosts(boost) {
+    return Array.from({ length: 36 }, (_, k) => boost[Math.round(k / 3) % EQ_BANDS.length]);
+  }
+
+  function argmax(values) {
+    return values.reduce((best, v, i) => (v > values[best] ? i : best), 0);
+  }
+
+  // Picks the colour from the softened screen: the strongest boosted 30° band, unless too little of
+  // the screen is clearly coloured, when the best-liked favourite (leaned by any faint tint) stands
+  // in, or white without favourites. Returns the colour plus what the live view shows.
+  function pickScreenColour(soft, preset) {
+    const boosts = binBoosts(preset.boost);
+    const around = (k) => [(k + 35) % 36, k, (k + 1) % 36];
+    const scores = Array.from({ length: 36 }, (_, k) => around(k).reduce((sum, j) => sum + soft.weight[j] * boosts[j], 0));
+    const best = argmax(scores);
+    let pick = best;
+    const prev = screenScan.pick;
+    const binGap = Math.abs(((best - prev + 54) % 36) - 18);
+    if (prev >= 0 && binGap > 2) {
+      // The colour showing may have drifted a little; it's whichever bin is strongest near it.
+      let near = prev;
+      for (let d = -2; d <= 2; d++) {
+        const j = (prev + d + 36) % 36;
+        if (scores[j] > scores[near]) near = j;
+      }
+      if (scores[best] < scores[near] * SCREEN_STICKY) pick = near;
+    }
+    const band = around(pick);
+    const share = band.reduce((sum, j) => sum + (boosts[j] > 0 ? soft.count[j] : 0), 0);
+    const b = Math.round(10 + 90 * Math.sqrt(soft.light));
+    const need = preset.minColour * (screenScan.pick >= 0 ? 1 : SCREEN_STICKY);
+    const view = { boosts, share, pick: -1, fallback: -1 };
+    if (scores[pick] > 0 && share >= need) {
+      let sx = 0, sy = 0, ss = 0, sw = 0;
+      band.forEach((j) => {
+        sx += soft.x[j] * boosts[j];
+        sy += soft.y[j] * boosts[j];
+        ss += soft.sat[j] * boosts[j];
+        sw += soft.weight[j] * boosts[j];
+      });
+      const h = Math.round(((Math.atan2(sy, sx) * 180) / Math.PI + 360) % 360) % 360;
+      // LEDs look washed out at screen saturation, so push it up a little.
+      return { ...view, pick, colour: { h, s: Math.min(1000, Math.round((ss / sw) * 1300)), b } };
+    }
+    const tintTotal = soft.tint.reduce((sum, v) => sum + v, 0);
+    const liking = preset.favourite.map((f, i) => f * (1 + 3 * (tintTotal ? soft.tint[i] / tintTotal : 0)));
+    let fallback = argmax(liking);
+    if (!(liking[fallback] > 0)) return { ...view, colour: { h: 0, s: 0, b } };
+    const was = screenScan.fallback;
+    if (was >= 0 && liking[was] > 0 && liking[fallback] < liking[was] * SCREEN_STICKY) fallback = was;
+    return { ...view, fallback, colour: { h: fallback * 30, s: Math.round(preset.strength * 1000), b } };
+  }
+
+  // Advanced detection, on every tick: the newest frame is grabbed in the background, and the
+  // screen is judged from the latest measurement. A still screen brings no new frames, so the last
+  // one counts again and the softening still settles.
+  function scanScreen() {
+    const send = screenSend;
+    if (!send.capture) return;
+    if (!screenScan.grabbing) {
+      const { capture, canvas } = send;
+      screenScan.grabbing = capture.grabFrame().then((frame) => {
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(frame, 0, 0, 64, 36);
+        frame.close();
+        if (send.capture === capture) screenScan.measure = measureScreen(ctx.getImageData(0, 0, 64, 36).data);
+      }).catch(() => { /* No new frame yet: the last one stands. */ })
+        .finally(() => { screenScan.grabbing = null; });
+    }
+    if (!screenScan.measure) return;
+    const now = Date.now();
+    softenScreen(screenScan.measure, now);
+    const result = pickScreenColour(screenScan.soft, activePreset());
+    screenScan.pick = result.pick;
+    screenScan.fallback = result.fallback;
+    const { colour } = result;
+    showScreenSwatch(colour);
+    drawTuneLive(result);
+    if (!send.writing && screenSendDue(colour, now)) {
+      send.writing = true;
+      const { firebase } = send;
+      firebase.fs.setDoc(screenDoc(firebase), { ...colour, t: now })
+        .then(() => Object.assign(send, { last: colour, sentAt: now, sent: send.sent + 1 }))
+        .catch(screenSendFailed)
+        .finally(() => { send.writing = false; });
+    }
+    if (send.capture) setScreenStatus(`Sending to ${settings.person}'s lights · ${send.sent.toLocaleString()} updates sent`);
+  }
+
+  function resetScreenScan() {
+    Object.assign(screenScan, { measure: null, soft: null, at: 0, pick: -1, fallback: -1 });
+    $('#tune-live').hidden = true;
+    $('#tune-live-text').hidden = true;
+  }
+
+  // What the detector sees, while this computer sends and Colour tuning is open: faint bars are the
+  // screen's colours, solid bars the same after the boost, and the picked band is underlined.
+  function drawTuneLive({ boosts, share, pick, fallback, colour }) {
+    const now = performance.now();
+    if (now - screenScan.drawnAt < 200 || document.hidden || !$('#screen-tune').open) return;
+    screenScan.drawnAt = now;
+    const canvas = $('#tune-live');
+    const text = $('#tune-live-text');
+    canvas.hidden = false;
+    text.hidden = false;
+    const w = canvas.clientWidth;
+    const ht = canvas.clientHeight;
+    const ctx = w && ht ? canvas.getContext('2d') : null;
+    if (!ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(ht * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(ht * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, ht);
+    const { weight } = screenScan.soft;
+    const top = Math.max(1e-6, ...weight.map((v, k) => Math.max(v, v * boosts[k])));
+    // Shifted by 15° so each band's three bars sit under its slider, red first.
+    const xOf = (k) => (((k * 10 + 10) % 360) / 360) * w;
+    const bw = w / 36;
+    for (let k = 0; k < 36; k++) {
+      const hue = k * 10;
+      const raw = (weight[k] / top) * (ht - 6);
+      const boosted = ((weight[k] * boosts[k]) / top) * (ht - 6);
+      ctx.fillStyle = `hsla(${hue}, 90%, 55%, .3)`;
+      ctx.fillRect(xOf(k) + 1, ht - 4 - raw, bw - 2, raw);
+      ctx.fillStyle = `hsl(${hue}, 90%, 55%)`;
+      ctx.fillRect(xOf(k) + 3, ht - 4 - boosted, bw - 6, boosted);
+    }
+    if (pick >= 0) {
+      ctx.fillStyle = '#fff';
+      [(pick + 35) % 36, pick, (pick + 1) % 36].forEach((k) => ctx.fillRect(xOf(k), ht - 2, bw, 2));
+    }
+    const preset = activePreset();
+    const shown = pick >= 0 ? EQ_BANDS[Math.round(colour.h / 30) % EQ_BANDS.length]
+      : fallback >= 0 ? `no colour, so your favourite, ${EQ_BANDS[fallback]}` : 'no colour, so white';
+    text.textContent = `Clearly coloured: ${(share * 100).toFixed(1)}% of the screen (needs ${(preset.minColour * 100).toFixed(1)}%) · showing ${shown}`;
+  }
+
+  // ---- Colour tuning presets, per person in Firestore ----
+
+  function tuneDoc({ db, fs }, person) {
+    return fs.doc(db, 'users', person.toLowerCase(), 'config', 'screen');
+  }
+
+  function activePreset() {
+    return BUILTIN_PRESETS[screenTune.active] || screenTune.presets[screenTune.active] || BUILTIN_PRESETS.neutral;
+  }
+
+  function clampNumber(v, lo, hi, fallback) {
+    return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback;
+  }
+
+  // Anyone with the access key can write the document, so everything read back is checked.
+  function cleanPreset(p) {
+    if (!p || typeof p !== 'object') return null;
+    const bands = (list, hi, fallback) => EQ_BANDS.map((_, i) => clampNumber(Array.isArray(list) ? list[i] : NaN, 0, hi, fallback));
+    return {
+      name: String(p.name || 'My preset').slice(0, 40),
+      boost: bands(p.boost, 3, 1),
+      favourite: bands(p.favourite, 5, 0),
+      strength: clampNumber(p.strength, 0.1, 1, 0.6),
+      minColour: clampNumber(p.minColour, 0.01, 0.2, 0.03),
+      soften: SOFTEN_STEPS.includes(p.soften) ? p.soften : 1000,
+    };
+  }
+
+  function applyTuneData(data) {
+    const presets = {};
+    Object.entries((data && typeof data.presets === 'object' && data.presets) || {}).slice(0, MAX_PRESETS).forEach(([id, p]) => {
+      const clean = !BUILTIN_PRESETS[id] && cleanPreset(p);
+      if (clean) presets[id] = clean;
+    });
+    const active = data && (BUILTIN_PRESETS[data.active] || presets[data.active]) ? data.active : 'neutral';
+    Object.assign(screenTune, { presets, active });
+    try {
+      localStorage.setItem(TUNE_CACHE_KEY, JSON.stringify({ person: screenTune.person, active, presets }));
+    } catch { /* only saves a moment at start-up */ }
+    renderTune();
+  }
+
+  // Wanted while this computer sends, or while Colour tuning is open. Starts from the copy kept in
+  // this browser, then follows Firestore, so edits from the other device apply within a second.
+  async function watchTune() {
+    const wanted = featureOn('screenTune') && (screenSend.stream || $('#screen-tune').open);
+    if (!wanted || !storedKey() || !settings.person) return;
+    if (screenTune.person === settings.person) return;
+    stopWatchingTune();
+    const person = settings.person;
+    screenTune.person = person;
+    const cached = loadJson(TUNE_CACHE_KEY, null);
+    applyTuneData(cached && cached.person === person ? cached : null);
+    let firebase;
+    try {
+      firebase = await connectFirebase();
+    } catch (err) {
+      screenTune.person = '';
+      setTuneStatus(`Couldn't load presets: ${err.code || err.message}`);
+      return;
+    }
+    if (screenTune.person !== person) return;
+    screenTune.unsubscribe = firebase.fs.onSnapshot(tuneDoc(firebase, person), (snap) => {
+      // This device's own unsaved edits win; they're about to be saved.
+      if (!screenTune.saveTimer) applyTuneData(snap.exists() ? snap.data() : null);
+    }, (err) => setTuneStatus(err.code === 'resource-exhausted' ? QUOTA_TEXT : `Firestore stopped preset updates: ${err.code || err.message}`));
+  }
+
+  function stopWatchingTune() {
+    writeTune();
+    if (screenTune.unsubscribe) screenTune.unsubscribe();
+    Object.assign(screenTune, { person: '', unsubscribe: null });
+  }
+
+  function setTuneStatus(text) {
+    $('#tune-status').textContent = text;
+  }
+
+  function saveTune() {
+    clearTimeout(screenTune.saveTimer);
+    setTuneStatus('Saving…');
+    screenTune.saveTimer = setTimeout(writeTune, 1000);
+  }
+
+  // Saves a pending edit: a second after the last change, or straight away when switching person.
+  async function writeTune() {
+    if (!screenTune.saveTimer) return;
+    clearTimeout(screenTune.saveTimer);
+    screenTune.saveTimer = null;
+    const { person, active } = screenTune;
+    if (!person) return;
+    const data = { active, presets: JSON.parse(JSON.stringify(screenTune.presets)), t: Date.now() };
+    try {
+      const firebase = await connectFirebase();
+      await firebase.fs.setDoc(tuneDoc(firebase, person), data);
+      if (screenTune.person === person) setTuneStatus(`Saved for ${person}.`);
+    } catch (err) {
+      setTuneStatus(err.code === 'resource-exhausted' ? QUOTA_TEXT : `Couldn't save: ${err.code || err.message}`);
+    }
+  }
+
+  // Changes the active preset with `change(preset)`. A built-in one is copied first, as "My …".
+  function editPreset(change) {
+    let preset = screenTune.presets[screenTune.active];
+    if (!preset) {
+      if (Object.keys(screenTune.presets).length >= MAX_PRESETS) {
+        renderTune();
+        setTuneStatus(`You have ${MAX_PRESETS} presets already. Delete one to make another.`);
+        return;
+      }
+      const base = activePreset();
+      const names = new Set(Object.values(screenTune.presets).map((p) => p.name));
+      let name = `My ${base.name}`;
+      for (let n = 2; names.has(name); n++) name = `My ${base.name} ${n}`;
+      preset = cleanPreset({ ...base, name });
+      const id = `p${Date.now().toString(36)}`;
+      screenTune.presets[id] = preset;
+      screenTune.active = id;
+    }
+    change(preset);
+    renderTune();
+    saveTune();
+  }
+
+  function renamePreset() {
+    const preset = screenTune.presets[screenTune.active];
+    if (!preset) return;
+    const name = (window.prompt('Name this preset', preset.name) || '').trim().slice(0, 40);
+    if (!name) return;
+    preset.name = name;
+    renderTune();
+    saveTune();
+  }
+
+  function deletePreset() {
+    const preset = screenTune.presets[screenTune.active];
+    if (!preset || !window.confirm(`Delete the preset "${preset.name}"?`)) return;
+    delete screenTune.presets[screenTune.active];
+    screenTune.active = 'neutral';
+    renderTune();
+    saveTune();
+  }
+
+  function softenLabel(ms) {
+    return ms ? `${ms / 1000} s` : 'Off';
+  }
+
+  function renderTune() {
+    const ready = !!storedKey() && !!settings.person;
+    const own = Object.entries(screenTune.presets);
+    const select = $('#tune-preset');
+    select.innerHTML = `<optgroup label="Built in">${Object.entries(BUILTIN_PRESETS)
+      .map(([id, p]) => `<option value="${id}">${esc(p.name)}</option>`).join('')}</optgroup>`
+      + (own.length ? `<optgroup label="Yours">${own.map(([id, p]) => `<option value="${esc(id)}">${esc(p.name)}</option>`).join('')}</optgroup>` : '');
+    select.value = screenTune.active;
+    const preset = activePreset();
+    const mine = !!screenTune.presets[screenTune.active];
+    $('#btn-tune-rename').hidden = !mine;
+    $('#btn-tune-delete').hidden = !mine;
+    document.querySelectorAll('#screen-tune input, #screen-tune select, #screen-tune button').forEach((el) => { el.disabled = !ready; });
+    if (!ready) setTuneStatus(TUNE_LOCKED_TEXT);
+    else if ($('#tune-status').textContent === TUNE_LOCKED_TEXT) setTuneStatus('');
+    const showBand = (el, v, text) => {
+      el.value = String(v);
+      el.style.setProperty('--fill', `${(v / Number(el.max)) * 100}%`);
+      el.closest('.eq-band').querySelector('.eq-value').textContent = text;
+    };
+    document.querySelectorAll('#tune-boost input').forEach((el, i) => showBand(el, preset.boost[i], `${preset.boost[i]}×`));
+    document.querySelectorAll('#tune-fav input').forEach((el, i) => showBand(el, preset.favourite[i], String(preset.favourite[i])));
+    $('#tune-strength').value = String(Math.round(preset.strength * 100));
+    $('#tune-strength-value').textContent = `${(preset.strength * 100).toFixed(1)}%`;
+    $('#tune-min').value = String(Math.round(preset.minColour * 100));
+    $('#tune-min-value').textContent = `${(preset.minColour * 100).toFixed(1)}%`;
+    $('#tune-soften').value = String(SOFTEN_STEPS.indexOf(preset.soften));
+    $('#tune-soften-value').textContent = softenLabel(preset.soften);
+  }
+
+  function buildEqualizer(root, key, max, step) {
+    root.innerHTML = EQ_BANDS.map((name, i) => `<div class="eq-band" style="--c: hsl(${i * 30}, 90%, 55%)">
+        <span class="eq-value"></span>
+        <input type="range" min="0" max="${max}" step="${step}" data-band="${i}" aria-label="${name}" title="${name}">
+        <span class="eq-dot"></span>
+        <span class="eq-name">${name}</span>
+      </div>`).join('');
+    root.addEventListener('input', (e) => {
+      const i = Number(e.target.dataset.band);
+      const v = Number(e.target.value);
+      editPreset((p) => { p[key][i] = v; });
+    });
+  }
+
+  function setupTune() {
+    buildEqualizer($('#tune-boost'), 'boost', 3, 0.25);
+    buildEqualizer($('#tune-fav'), 'favourite', 5, 1);
+    $('#tune-strength').addEventListener('input', (e) => editPreset((p) => { p.strength = Number(e.target.value) / 100; }));
+    $('#tune-min').addEventListener('input', (e) => editPreset((p) => { p.minColour = Number(e.target.value) / 100; }));
+    $('#tune-soften').addEventListener('input', (e) => editPreset((p) => { p.soften = SOFTEN_STEPS[Number(e.target.value)]; }));
+    $('#tune-preset').addEventListener('change', (e) => {
+      screenTune.active = e.target.value;
+      renderTune();
+      saveTune();
+    });
+    $('#btn-tune-rename').addEventListener('click', renamePreset);
+    $('#btn-tune-delete').addEventListener('click', deletePreset);
+    $('#screen-tune').addEventListener('toggle', watchTune);
+    renderTune();
+  }
+
+  // The slider's value, and what it means for the free daily writes when the screen is busy (a big
+  // change every time sending is allowed). Below 1 s it's shown as a warning.
+  function renderScreenGap() {
+    const gap = settings.screenGap;
+    const perHour = Math.round(3600 / gap);
+    const hours = (FREE_WRITES_PER_DAY / perHour).toFixed(1);
+    $('#screen-gap').value = String(SCREEN_GAP_STEPS.indexOf(gap));
+    $('#screen-gap-value').textContent = `${gap} s`;
+    const note = $('#screen-gap-note');
+    const usage = `A busy screen uses up to ${perHour.toLocaleString()} writes an hour, so Firebase's free `
+      + `${FREE_WRITES_PER_DAY.toLocaleString()} writes a day last about ${hours} hours, shared by everyone.`;
+    note.textContent = gap < 1
+      ? `⚠ Faster than once a second eats the free daily writes quickly. ${usage} When they run out, `
+        + 'screen sync stops for everyone until midnight US Pacific time.'
+      : usage;
+    note.classList.toggle('warn', gap < 1);
+  }
+
+  // Frames Chrome captures each second: at least as many as are looked at.
+  function screenFrameRate() {
+    return featureOn('screenTune') ? Math.max(10, settings.screenScan) : 10;
+  }
+
+  // After a change of detector or scan rate while sending.
+  function retuneScreenSend() {
+    if (!screenSend.stream) return;
+    resetScreenScan();
+    screenSend.worker.postMessage(screenSampleMs());
+    screenSend.stream.getVideoTracks()[0].applyConstraints({ frameRate: screenFrameRate() }).catch(() => {});
+  }
+
   async function startScreenSend() {
     if (screenSend.stream) return;
     let firebase;
@@ -2918,7 +3478,7 @@
     }
     let stream;
     try {
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: screenFrameRate() }, audio: false });
     } catch (err) {
       setScreenStatus(`Screen sharing was cancelled or blocked (${err.name}).`);
       return;
@@ -2927,13 +3487,17 @@
     // Chrome's own "Stop sharing" button ends the track.
     track.addEventListener('ended', stopScreenSend);
     // A worker keeps time, because Chrome slows a hidden tab's own timers right down, and the
-    // movie usually plays in another window.
-    const ticker = new Blob([`setInterval(() => postMessage(0), ${SCREEN_SAMPLE_MS});`], { type: 'text/javascript' });
+    // movie usually plays in another window. It's told the interval, which follows the slider.
+    const ticker = new Blob(['let timer; onmessage = (e) => { clearInterval(timer); timer = setInterval(() => postMessage(0), e.data); };'],
+      { type: 'text/javascript' });
     Object.assign(screenSend, {
       stream, firebase, capture: new ImageCapture(track), canvas: new OffscreenCanvas(64, 36),
-      worker: new Worker(URL.createObjectURL(ticker)), busy: false, last: null, sentAt: 0, sent: 0,
+      worker: new Worker(URL.createObjectURL(ticker)), busy: false, writing: false, last: null, sentAt: 0, sent: 0,
     });
+    resetScreenScan();
+    watchTune();
     screenSend.worker.onmessage = sampleScreen;
+    screenSend.worker.postMessage(screenSampleMs());
     const preview = $('#screen-preview');
     preview.srcObject = stream;
     preview.hidden = false;
@@ -2944,6 +3508,10 @@
   }
 
   async function sampleScreen() {
+    if (featureOn('screenTune')) {
+      scanScreen();
+      return;
+    }
     if (screenSend.busy || !screenSend.capture) return;
     screenSend.busy = true;
     try {
@@ -2954,23 +3522,36 @@
       const colour = screenColour(ctx.getImageData(0, 0, 64, 36).data);
       showScreenSwatch(colour);
       const now = Date.now();
-      const { last, sentAt } = screenSend;
-      const since = now - sentAt;
-      const due = !last
-        || (since >= SCREEN_MIN_GAP_MS && screenColourJumped(colour, last))
-        || (since >= settings.screenEvery && screenColourMoved(colour, last))
-        || since >= SCREEN_HEARTBEAT_MS;
-      if (due) {
+      if (screenSendDue(colour, now)) {
         const { fs } = screenSend.firebase;
         await fs.setDoc(screenDoc(screenSend.firebase), { ...colour, t: now });
         Object.assign(screenSend, { last: colour, sentAt: now, sent: screenSend.sent + 1 });
       }
       setScreenStatus(`Sending to ${settings.person}'s lights · ${screenSend.sent.toLocaleString()} updates sent`);
     } catch (err) {
-      // A frame can be missing while the screen is still; just try again next time.
-      if (err.name !== 'InvalidStateError') setScreenStatus(`Couldn't send: ${err.code || err.message}`);
+      screenSendFailed(err);
     } finally {
       screenSend.busy = false;
+    }
+  }
+
+  function screenSendDue(colour, now) {
+    const { last, sentAt } = screenSend;
+    const since = now - sentAt;
+    const gap = settings.screenGap * 1000;
+    return !last
+      || (since >= gap && screenColourJumped(colour, last))
+      || (since >= Math.max(gap, settings.screenEvery) && screenColourMoved(colour, last))
+      || since >= SCREEN_HEARTBEAT_MS;
+  }
+
+  function screenSendFailed(err) {
+    if (err.code === 'resource-exhausted') {
+      stopScreenSend();
+      setScreenStatus(QUOTA_TEXT);
+    } else if (err.name !== 'InvalidStateError') {
+      // InvalidStateError: no frame while the screen is still; just try again next time.
+      setScreenStatus(`Couldn't send: ${err.code || err.message}`);
     }
   }
 
@@ -2979,6 +3560,7 @@
     screenSend.worker.terminate();
     screenSend.stream.getTracks().forEach((t) => t.stop());
     Object.assign(screenSend, { stream: null, capture: null, canvas: null, worker: null });
+    resetScreenScan();
     $('#screen-preview').srcObject = null;
     $('#screen-preview').hidden = true;
     $('#btn-screen-send').textContent = '🖥 Send this screen';
@@ -3001,7 +3583,7 @@
     markActive(null);
     const unsubscribe = firebase.fs.onSnapshot(screenDoc(firebase), (snap) => {
       if (snap.exists()) onScreenColour(snap.data());
-    }, (err) => setScreenStatus(`Firestore stopped the updates: ${err.code || err.message}`));
+    }, (err) => setScreenStatus(err.code === 'resource-exhausted' ? QUOTA_TEXT : `Firestore stopped the updates: ${err.code || err.message}`));
     Object.assign(screenFollow, {
       unsubscribe, person: settings.person, from: null, target: null, shown: null, heardAt: 0, sentAt: 0,
       brightness: current.b, last: null, timer: setInterval(screenFollowTick, 50),
@@ -3068,10 +3650,24 @@
       stopScreenSend();
       settings.person = e.target.value;
       saveSettings();
+      stopWatchingTune();
       renderFirebaseUi();
     });
     $('#btn-fb-unlock').addEventListener('click', unlockFirebase);
     $('#btn-fb-forget').addEventListener('click', forgetKey);
+    $('#screen-gap').addEventListener('input', (e) => {
+      settings.screenGap = SCREEN_GAP_STEPS[Number(e.target.value)];
+      saveSettings();
+      renderScreenGap();
+      if (screenSend.worker) screenSend.worker.postMessage(screenSampleMs());
+    });
+    renderScreenGap();
+    $('#screen-scan').value = String(settings.screenScan);
+    $('#screen-scan').addEventListener('change', (e) => {
+      settings.screenScan = Number(e.target.value);
+      saveSettings();
+      retuneScreenSend();
+    });
     $('#screen-every').value = String(settings.screenEvery);
     $('#screen-every').addEventListener('change', (e) => {
       settings.screenEvery = Number(e.target.value);
@@ -3086,6 +3682,7 @@
     const canSend = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia && window.ImageCapture);
     $('#btn-screen-send').hidden = !canSend;
     $('#screen-send-options').hidden = !canSend;
+    setupTune();
     renderFirebaseUi();
   }
 
@@ -3182,10 +3779,15 @@
     $('.create').hidden = !on.record && !on.sequences;
     $('#diagnostics').hidden = !on.diagnostics;
     $('#sec-screen').hidden = !on.screen;
+    $('#screen-tune').hidden = !on.screenTune;
+    $('#screen-scan-row').hidden = !on.screenTune;
     if (!on.screen) {
       stopScreenFollow();
       stopScreenSend();
     }
+    if (!on.screenTune) stopWatchingTune();
+    retuneScreenSend();
+    watchTune();
     if (!on.music && (mode === 'phonemic' || mode === 'devicemic')) stopMusic();
     if (!on.record && recorder.active) {
       stopRecording();
@@ -3255,7 +3857,8 @@
   // Remembers which sections were folded away.
   function setupCollapsibles() {
     document.querySelectorAll('details[data-collapse]').forEach((d) => {
-      if (settings.collapsed[d.dataset.collapse]) d.open = false;
+      const folded = settings.collapsed[d.dataset.collapse];
+      if (folded !== undefined) d.open = !folded;
       d.addEventListener('toggle', () => {
         settings.collapsed[d.dataset.collapse] = !d.open;
         saveSettings();

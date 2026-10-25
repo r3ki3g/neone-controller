@@ -48,17 +48,19 @@ Limit: "This phone's mic" music patterns only listen while the app is open, beca
 
 ## Screen colour sync
 
-The lights follow the main colour on a computer screen, like an ambient TV light. On a computer (Chrome or Edge, Mac or Windows), open the website, then press **Send this screen** in the Colour tab: the page looks at the screen twice a second and works out the strongest vivid colour and the overall brightness. A big jump, like a cut from ocean to forest, is sent straight away (at most once a second). Smaller drifts are sent on the interval picked in the section (1–30 s, default 3 s). An unchanging screen still checks in every 30 s. On the phone with the lights, press **Follow my screen**: it fades the lights to each new colour.
+The lights follow the main colour on a computer screen, like an ambient TV light. On a computer (Chrome or Edge, Mac or Windows), open the website, then press **Send this screen** in the Colour tab: the page looks at the screen twice a second and works out the strongest vivid colour and the overall brightness. A big jump, like a cut from ocean to forest, is sent as soon as the "at most every" slider allows (0.2–3 s, default 1 s). That slider also limits everything else the computer sends, and it shows how many hours a busy screen lasts on the free plan, with a warning below 1 s. Smaller drifts are sent on the interval picked in the section (1–30 s, default 3 s). An unchanging screen still checks in every 30 s. On the phone with the lights, press **Follow my screen**: it fades the lights to each new colour. When the free daily writes run out, both devices say so. How the colour is picked: [screen-colour-algorithm.md](screen-colour-algorithm.md).
+
+**Advanced colour detection** (Settings, on by default) looks at the screen 2–20 times a second (default 10; it doesn't cost more writes), softens what it sees over time, and picks the colour with the person's preset under **Colour tuning**: a 12-band colour boost (for example Sky down so a bluish sky doesn't beat green trees), favourite colours for screens without colour (instead of white), the strength of that colour, the minimum share of colour, and the softening time. Presets are saved per person in Firestore at `users/<name>/config/screen` and can be edited on the phone while the computer sends; the computer picks up a change within about a second. Turning the feature off brings back the simple detector.
 
 It runs through Firestore in the `neon-controller` Firebase project, with no server of our own:
 
 - **Access key:** the Firebase `apiKey` is not in this repo. Paste it once on each device in the Screen colour sync section, as `AIza…---YourName`. The name picks whose lights these are (Prabhashwara, Chamuth or Test), and each person's computer reaches only their own phone. The other config values in `index.html` are identifiers that grant nothing on their own.
-- **Sign-in:** anonymous Firebase sign-in. `firebase/firestore.rules` lets signed-in visitors read and write only `users/<name>/live/screen`, and only as `{ h, s, b, t }`.
+- **Sign-in:** anonymous Firebase sign-in. `firebase/firestore.rules` lets signed-in visitors read and write only `users/<name>/live/screen`, only as `{ h, s, b, t }`, and `users/<name>/config/screen`, only as `{ active, presets (up to 20), t }`. The page checks every preset it reads back.
 - **Never run `firebase deploy`:** Firebase Hosting would publish the whole config, key included.
 
 Firebase console setup, done once:
 
-1. Firestore Database created in production mode, and `firebase/firestore.rules` published under Rules.
+1. Firestore Database created in production mode, and `firebase/firestore.rules` published under Rules (publish it again after it changes).
 2. Authentication → Sign-in method → Anonymous enabled; Authorized domains include `r3ki3g.github.io`.
 3. Recommended: Google Cloud Console → APIs & Services → Credentials → Browser key → website restriction `r3ki3g.github.io/*`.
 
