@@ -153,7 +153,7 @@
     <h1>My LED Lights</h1>
     <button id="btn-settings" class="secondary">⚙ Settings</button>
   </div>
-  <p class="sub">LotusLamp X and MR Star strips, controlled together.</p>
+  <p class="sub">LotusLamp X and MR Star strips, controlled together. <span id="version"></span></p>
 
   <div id="view-main">
 
@@ -478,6 +478,9 @@
   // Set once a light has been added on this site, so an empty getDevices() after a
   // refresh can be recognised as "Chrome forgot them" rather than "first visit".
   const PAIRED_KEY = 'led-lights-paired-before';
+  // Bumped with every change to this page. Shown under the title, because GitHub Pages takes a
+  // few minutes to publish an update.
+  const PAGE_VERSION = '1.1';
   const TAB_KEY = 'led-lights-tab';
   const TABS = ['colour', 'scenes', 'music', 'shows'];
   const SETTINGS_KEY = 'led-lights-settings';
@@ -1463,7 +1466,7 @@
   async function restoreLights() {
     try {
       const remembered = await navigator.bluetooth.getDevices();
-      log(`Chrome remembers ${remembered.length.toLocaleString()} device(s).`);
+      log(`Remembered lights: ${remembered.length.toLocaleString()} device(s).`);
       remembered.forEach((device, i) => {
         const d = upsert(device, { source: 'picked' });
         if (!d.protocol) return;
@@ -1516,7 +1519,7 @@
       setCheck('scan', 'warn', 'Passive scanning off (needs the experimental flag)');
     }
     if (typeof navigator.bluetooth.getDevices === 'function') {
-      setCheck('remember', 'ok', 'Chrome can list remembered lights');
+      setCheck('remember', 'ok', 'Lights are remembered between visits');
       await restoreLights();
     } else {
       setCheck('remember', 'err', 'Chrome cannot remember lights yet (see the setup box at the top)');
@@ -2932,6 +2935,9 @@
     if (syncActive || lights().some(waitingFor)) queueRender();
   }, 1000);
 
+  // In the Android app, the app's own version is shown too (it's updated separately, by installing a new APK).
+  const appVersion = window.AndroidBle && typeof window.AndroidBle.appVersion === 'function' ? ` · App v${window.AndroidBle.appVersion()}` : '';
+  $('#version').textContent = `· Website v${PAGE_VERSION}${appVersion}`;
   buildChips();
   setupWheel();
   setupShows();

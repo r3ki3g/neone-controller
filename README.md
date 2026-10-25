@@ -23,6 +23,29 @@ After that, opening or refreshing the page reconnects every light automatically,
 
 Chrome remembers lights per site, so `localhost` and a GitHub Pages address each need their own one-time "Add a light".
 
+## Android app
+
+Chrome pauses a page a few seconds after you switch to another app, which freezes replays. The Android app in `android/` loads the website from GitHub Pages and keeps it running in the background and with the screen off:
+
+- Bluetooth goes through Android directly. `android/app/src/main/assets/bridge.js` gives the page the `navigator.bluetooth` calls it uses, so `index.html` works unchanged. The bridge only answers the website itself.
+- A foreground service, with the notification "Keeping your lights connected", stops Android pausing the app. While a replay or the phone mic runs, it also keeps the CPU awake.
+- The page is always told it's visible, so its timers run at full speed in the background.
+- It needs internet to start; without it, a "No internet" screen offers Try again.
+
+`index.html` is the single source of truth: website changes reach the app on its next launch. Only changes to the native code need a new APK. The page shows "Website v…" under the title (and "App v…" inside the app); bump `PAGE_VERSION` in `index.html` with each change, and `versionName` in `android/app/build.gradle.kts` with each app change.
+
+Build it on a Mac with the Android SDK:
+
+```sh
+cd android
+./gradlew exportApk
+# Writes MyLEDLights_v<version>.apk next to index.html, replacing the previous one.
+```
+
+Install it with `adb install -r MyLEDLights_v1.1.apk` (USB debugging on), or copy the file to the phone and open it. The app is signed with this Mac's debug key, so updates must be built on the same Mac; otherwise uninstall first, which deletes the app's saved replays. The app keeps its own remembered lights and replays, separate from Chrome: add the lights once, and move replays with Export and Import.
+
+Limit: "This phone's mic" music patterns only listen while the app is open, because Android doesn't let a background app use the mic without a separate permission type.
+
 ## Features
 
 - **Colour:** one colour picker and presets for every light, plus a shared brightness slider from 1% to 100%. On phones it's a built-in colour wheel that updates the lights live while you drag, because Android Chrome's own picker only reports the colour when its dialog closes. Its outer ring is a dimmer from Min to Max; it never switches the lights off, and overshooting an end while dragging stays at that end. Desktop can switch to the wheel with "Use colour wheel".
