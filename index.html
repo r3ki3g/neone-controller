@@ -145,6 +145,33 @@
     .eq-name { max-width: 100%; overflow: hidden; font-size: .62rem; color: var(--muted); white-space: nowrap; }
     @media (max-width: 520px) { .eq-name { display: none; } }
     #tune-live { height: 56px; margin: 10px 0 4px; }
+    /* "How the colour is picked": numbered steps, top to bottom, joined by labelled arrows. */
+    .flow { counter-reset: step; }
+    .flow-top { margin: 4px 0 8px; }
+    .flow-step { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+    .flow-head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+    .flow-num { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 22px; height: 22px;
+                border-radius: 50%; background: var(--accent); color: #fff; font-size: .75rem; }
+    .flow-num::before { counter-increment: step; content: counter(step); }
+    .flow-desc { margin: 4px 0 0; }
+    .flow-arrow { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 8px;
+                  color: var(--muted); font-size: .82rem; text-align: center; }
+    .flow-arrow-icon { color: var(--accent); font-size: 1.4rem; line-height: 1; }
+    .flow-maths { display: inline-block; max-width: 100%; margin-top: 4px; padding: 3px 8px; border-radius: 6px; background: var(--bg);
+                  color: var(--muted); font: 11px/1.5 ui-monospace, Menlo, monospace; text-align: center; }
+    .flow-step .flow-maths { display: block; text-align: left; }
+    .flow.no-maths .flow-maths { display: none; }
+    .flow-pic { display: block; width: 100%; height: 56px; margin-top: 8px; border-radius: 6px; background: var(--bg); }
+    .flow-pic.pixels { width: min(100%, 384px); height: auto; aspect-ratio: 16 / 9; image-rendering: pixelated; }
+    .flow-pic.timeline { height: 40px; }
+    .flow #screen-preview { margin-top: 8px; }
+    .flow:not(.live) .flow-live { display: none !important; }
+    .flow.live .flow-idle { display: none; }
+    .flow-swatch { flex: none; width: 56px; height: 56px; border-radius: 50%; border: 2px solid var(--border); }
+    .flow-meter { position: relative; height: 10px; margin-top: 10px; border-radius: 999px; background: var(--bg); overflow: hidden; }
+    .flow-meter-fill { height: 100%; width: 0; background: var(--ok); }
+    .flow-meter-mark { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--warn); }
+    .flow-step.dim { opacity: .55; }
     .topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
     .topbar h1 { margin: 0; }
     details.section { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 12px; }
@@ -281,71 +308,216 @@
           <span id="screen-swatch" class="screen-swatch"></span>
           <span id="screen-status" class="hint"></span>
         </div>
+        <!-- Blocks with an id of blk-… sit in their data-slot here, or in the matching data-flow-slot of
+             "How the colour is picked" when that feature is on. -->
         <div id="screen-send-options">
-          <label for="screen-every">Small colour changes are sent every</label>
-          <select id="screen-every">
-            <option value="1000">1 s</option>
-            <option value="3000">3 s</option>
-            <option value="5000">5 s</option>
-            <option value="10000">10 s</option>
-            <option value="30000">30 s</option>
-          </select>
-          <label for="screen-gap">Big changes, like a cut from ocean to forest, are sent at most every</label>
-          <div class="row">
-            <input id="screen-gap" type="range" min="0" max="9" step="1">
-            <span id="screen-gap-value" class="value">1 s</span>
+          <div data-slot="send">
+            <div id="blk-send">
+              <label for="screen-every">Small colour changes are sent every</label>
+              <select id="screen-every">
+                <option value="1000">1 s</option>
+                <option value="3000">3 s</option>
+                <option value="5000">5 s</option>
+                <option value="10000">10 s</option>
+                <option value="30000">30 s</option>
+              </select>
+              <label for="screen-gap">Big changes, like a cut from ocean to forest, are sent at most every</label>
+              <div class="row">
+                <input id="screen-gap" type="range" min="0" max="9" step="1">
+                <span id="screen-gap-value" class="value">1 s</span>
+              </div>
+              <p id="screen-gap-note" class="hint"></p>
+            </div>
           </div>
-          <p id="screen-gap-note" class="hint"></p>
-          <div id="screen-scan-row">
-            <label for="screen-scan">Look at the screen</label>
-            <select id="screen-scan">
-              <option value="2">2 times a second</option>
-              <option value="5">5 times a second</option>
-              <option value="10">10 times a second</option>
-              <option value="20">20 times a second</option>
-            </select>
-            <p class="hint">Looking more often makes the colour follow the screen more smoothly. It doesn't use more Firebase writes.</p>
+          <div data-slot="scan">
+            <div id="blk-scan">
+              <label for="screen-scan">Look at the screen</label>
+              <select id="screen-scan">
+                <option value="2">2 times a second</option>
+                <option value="5">5 times a second</option>
+                <option value="10">10 times a second</option>
+                <option value="20">20 times a second</option>
+              </select>
+              <p class="hint">Looking more often makes the colour follow the screen more smoothly. It doesn't use more Firebase writes.</p>
+            </div>
           </div>
         </div>
         <details id="screen-tune" class="section" data-collapse="screen-tune">
-          <summary>Colour tuning</summary>
-          <p class="hint">How the computer picks the colour. It's saved in Firebase for each person, so you can tune it here on the phone
-            while the computer sends, and the lights change within a second.</p>
-          <label for="tune-preset">Preset</label>
-          <div class="row">
-            <select id="tune-preset"></select>
-            <button id="btn-tune-rename" class="secondary">Rename</button>
-            <button id="btn-tune-delete" class="secondary">Delete</button>
+          <summary><span id="tune-title">Colour tuning</span> <span class="badge pro">PRO</span></summary>
+          <div id="tune-presets">
+            <p class="hint">How the computer picks the colour. It's saved in Firebase for each person, so you can tune it here on the phone
+              while the computer sends, and the lights change within a second.</p>
+            <label for="tune-preset">Preset</label>
+            <div class="row">
+              <select id="tune-preset"></select>
+              <button id="btn-tune-rename" class="secondary">Rename</button>
+              <button id="btn-tune-delete" class="secondary">Delete</button>
+            </div>
+            <p id="tune-status" class="hint"></p>
           </div>
-          <p id="tune-status" class="hint"></p>
-          <label>Colour boost</label>
-          <p class="hint">Turn a colour up to favour it, or down to ignore it. For example, Sky down stops a bluish sky beating green trees.
-            Changing a built-in preset makes your own copy.</p>
-          <div id="tune-boost" class="eq"></div>
-          <canvas id="tune-live" class="ribbon" hidden></canvas>
-          <p id="tune-live-text" class="hint" hidden></p>
-          <label>When there's no colour, show</label>
-          <p class="hint">For grey, white or dark scenes: how much you like each colour. All at 0 shows white.
-            A faint tint on screen tips the choice between favourites.</p>
-          <div id="tune-fav" class="eq"></div>
-          <label for="tune-strength">Strength of that colour</label>
-          <div class="row">
-            <input id="tune-strength" type="range" min="10" max="100" step="5">
-            <span id="tune-strength-value" class="value"></span>
+          <div id="tune-classic">
+            <div data-slot="boost">
+              <div id="blk-boost">
+                <label>Colour boost</label>
+                <p class="hint">Turn a colour up to favour it, or down to ignore it. For example, Sky down stops a bluish sky beating green trees.
+                  Changing a built-in preset makes your own copy.</p>
+                <div id="tune-boost" class="eq"></div>
+              </div>
+            </div>
+            <canvas id="tune-live" class="ribbon" hidden></canvas>
+            <p id="tune-live-text" class="hint" hidden></p>
+            <div data-slot="fav">
+              <div id="blk-fav">
+                <label>When there's no colour, show</label>
+                <p class="hint">For grey, white or dark scenes: how much you like each colour. All at 0 shows white.
+                  A faint tint on screen tips the choice between favourites.</p>
+                <div id="tune-fav" class="eq"></div>
+              </div>
+            </div>
+            <div data-slot="strength">
+              <div id="blk-strength">
+                <label for="tune-strength">Strength of that colour</label>
+                <div class="row">
+                  <input id="tune-strength" type="range" min="10" max="100" step="5">
+                  <span id="tune-strength-value" class="value"></span>
+                </div>
+              </div>
+            </div>
+            <div data-slot="min">
+              <div id="blk-min">
+                <label for="tune-min">Minimum colour</label>
+                <div class="row">
+                  <input id="tune-min" type="range" min="1" max="20" step="1">
+                  <span id="tune-min-value" class="value"></span>
+                </div>
+                <p class="hint">How much of the screen must be clearly coloured to count. Below that, your favourite colour is shown.</p>
+              </div>
+            </div>
+            <div data-slot="soften">
+              <div id="blk-soften">
+                <label for="tune-soften">Softening</label>
+                <div class="row">
+                  <input id="tune-soften" type="range" min="0" max="6" step="1">
+                  <span id="tune-soften-value" class="value"></span>
+                </div>
+                <p class="hint">How many seconds of screen the colour is based on, so a quick flash doesn't change it.
+                  Smoothness, below, is how long the lights take to fade to it.</p>
+              </div>
+            </div>
           </div>
-          <label for="tune-min">Minimum colour</label>
-          <div class="row">
-            <input id="tune-min" type="range" min="1" max="20" step="1">
-            <span id="tune-min-value" class="value"></span>
+          <!-- "How the colour is picked" (a Settings feature): each step from the shared screen to the
+               colour sent, top to bottom, with its settings beside it. data-mode="advanced" or
+               "simple" parts show only with that detector. -->
+          <div id="tune-flow" class="flow" hidden>
+            <label class="check flow-top"><input id="flow-maths" type="checkbox"> Show the maths</label>
+            <p id="flow-idle" class="hint flow-idle"></p>
+
+            <div class="flow-step">
+              <div class="flow-head"><span class="flow-num"></span>Your screen</div>
+              <p class="hint flow-desc">What this computer shares, many times a second.</p>
+              <div data-flow-slot="preview"></div>
+              <p id="flow-cap-screen" class="hint flow-live"></p>
+              <div data-flow-slot="scan"></div>
+            </div>
+            <div class="flow-arrow"><span class="flow-arrow-icon">↓</span><span>Shrink: each block becomes its average colour</span>
+              <code id="flow-maths-shrink" class="flow-maths"></code></div>
+
+            <div class="flow-step">
+              <div class="flow-head"><span class="flow-num"></span>Shrunk to 64 × 36</div>
+              <p class="hint flow-desc">2,304 pixels: small enough to check every one, and fine detail like text blends away.</p>
+              <canvas id="flow-shrunk" class="flow-pic pixels flow-live" width="64" height="36"></canvas>
+              <p id="flow-cap-shrunk" class="hint flow-live"></p>
+            </div>
+            <div class="flow-arrow"><span class="flow-arrow-icon">↓</span><span>Sort each pixel</span>
+              <code class="flow-maths" data-mode="advanced">saturation s = (max − min) ÷ max · colour if s ≥ 20.0% · faint tint if s is 5.0–20.0% · ignored if less, or if max &lt; 12.0%</code>
+              <code class="flow-maths" data-mode="simple">ignored if max &lt; 12.0% or max − min &lt; 8.0% · otherwise colour</code></div>
+
+            <div class="flow-step">
+              <div class="flow-head"><span class="flow-num"></span><span data-mode="advanced">Colour, faint tint or ignored</span><span data-mode="simple">Colour or ignored</span></div>
+              <p class="hint flow-desc" data-mode="advanced">Clear colours count. Faint tints, like a bluish white, are kept for later. Greys and blacks are ignored.</p>
+              <p class="hint flow-desc" data-mode="simple">Clear colours count. Greys, whites and blacks are ignored.</p>
+              <canvas id="flow-sorted" class="flow-pic pixels flow-live" width="64" height="36"></canvas>
+              <p id="flow-cap-sorted" class="hint flow-live"></p>
+            </div>
+            <div class="flow-arrow"><span class="flow-arrow-icon">↓</span><span>Add them up by colour</span>
+              <code class="flow-maths" data-mode="advanced">bar = round(hue ÷ 10°) · weight = s² × max, so pale colours count much less</code>
+              <code class="flow-maths" data-mode="simple">bar = floor(hue ÷ 10°) · weight = s × max</code></div>
+
+            <div class="flow-step">
+              <div class="flow-head"><span class="flow-num"></span>This scan's colours</div>
+              <p class="hint flow-desc">Each bar is 10° of the colour wheel: how much of that colour this one look found.</p>
+              <canvas id="flow-raw" class="flow-pic flow-live"></canvas>
+            </div>
+
+            <div class="flow-arrow" data-mode="advanced"><span class="flow-arrow-icon">↓</span><span>Soften over time</span>
+              <code class="flow-maths">soft ← soft + (1 − e^(−Δt ÷ τ)) × (this scan − soft) · τ = Softening</code></div>
+            <div class="flow-step" data-mode="advanced">
+              <div class="flow-head"><span class="flow-num"></span>Softened</div>
+              <p class="hint flow-desc">A running average, so a quick flash or a cut doesn't jerk the lights.</p>
+              <canvas id="flow-soft" class="flow-pic flow-live"></canvas>
+              <canvas id="flow-history" class="flow-pic timeline flow-live"></canvas>
+              <p class="hint flow-live">Last 10 s. Top: each look on its own. Bottom: softened, what's used.</p>
+              <div data-flow-slot="soften"></div>
+            </div>
+
+            <div class="flow-arrow"><span class="flow-arrow-icon">↓</span>
+              <span data-mode="advanced">Multiply by your colour boost, then find the strongest band</span><span data-mode="simple">Find the strongest band</span>
+              <code class="flow-maths" data-mode="advanced">score = softened weight × boost · band = a bar and its two neighbours (30°) · a new band must beat the current one × 1.25</code>
+              <code class="flow-maths" data-mode="simple">band = a bar and its two neighbours (30°)</code></div>
+            <div class="flow-step">
+              <div class="flow-head"><span class="flow-num"></span><span data-mode="advanced">Boosted and picked</span><span data-mode="simple">Strongest band</span></div>
+              <p class="hint flow-desc" data-mode="advanced">Faint bars are the screen, solid bars after your boost. The winning band is underlined.</p>
+              <p class="hint flow-desc" data-mode="simple">The band with the most colour wins; it's underlined.</p>
+              <canvas id="flow-pick" class="flow-pic flow-live"></canvas>
+              <div data-flow-slot="boost"></div>
+              <div class="flow-meter flow-live"><div id="flow-meter-fill" class="flow-meter-fill"></div><div id="flow-meter-mark" class="flow-meter-mark"></div></div>
+              <p id="flow-cap-pick" class="hint flow-live"></p>
+              <div data-flow-slot="min"></div>
+            </div>
+
+            <div class="flow-arrow"><span class="flow-arrow-icon">↓</span>
+              <span data-mode="advanced">Enough colour? Yes: use the band. No: your favourites</span><span data-mode="simple">Enough colour? Yes: use the band. No: white</span>
+              <code class="flow-maths" data-mode="advanced">enough if the band's clearly coloured share ≥ Minimum colour (× 1.25 to come back from no colour)</code>
+              <code class="flow-maths" data-mode="simple">enough if the band's weight ≥ 3.0% of the screen</code></div>
+            <div id="flow-fav-step" class="flow-step" data-mode="advanced">
+              <div class="flow-head"><span class="flow-num"></span>No colour? Your favourites</div>
+              <p class="hint flow-desc">When too little of the screen is clearly coloured, your favourites stand in, tipped by any faint tint.
+                Faint bars are the tint, solid bars how much each favourite scores.</p>
+              <canvas id="flow-fav" class="flow-pic flow-live"></canvas>
+              <p id="flow-cap-fav" class="hint flow-live"></p>
+              <div data-flow-slot="fav"></div>
+              <div data-flow-slot="strength"></div>
+              <code class="flow-maths">score = favourite × (1 + 3 × share of the faint tint in that band)</code>
+            </div>
+
+            <div class="flow-arrow"><span class="flow-arrow-icon">↓</span><span>Work out the colour</span>
+              <code class="flow-maths">hue = average angle in the band, atan2(Σ w·sin h, Σ w·cos h) · saturation = (Σ w·s ÷ Σ w) × 1.3, for LEDs · brightness = 10 + 90 × √(average lightness)</code></div>
+            <div class="flow-step">
+              <div class="flow-head"><span class="flow-num"></span>The colour</div>
+              <div class="row flow-live" style="margin-top: 8px">
+                <span id="flow-swatch" class="flow-swatch"></span>
+                <span id="flow-colour-text"></span>
+              </div>
+              <p class="hint flow-desc">The hue and saturation of the winning band, and the screen's brightness.</p>
+            </div>
+
+            <div class="flow-arrow"><span class="flow-arrow-icon">↓</span><span>Send it when it has really changed</span>
+              <code class="flow-maths">big change (hue ≥ 40°, saturation ≥ 40.0% or brightness ≥ 25): after "at most every" · smaller change (hue ≥ 5°, saturation ≥ 6.0% or brightness ≥ 4): after "every" · no change: a check-in every 30 s</code></div>
+            <div class="flow-step">
+              <div class="flow-head"><span class="flow-num"></span>Sent to Firebase</div>
+              <p class="hint flow-desc">Only real changes are sent, to save the free daily writes.</p>
+              <canvas id="flow-sent" class="flow-pic timeline flow-live"></canvas>
+              <p id="flow-cap-sent" class="hint flow-live"></p>
+              <div data-flow-slot="send"></div>
+            </div>
+
+            <div class="flow-arrow"><span class="flow-arrow-icon">↓</span><span>Your phone fades the lights</span>
+              <code class="flow-maths">over its Smoothness time, the short way round the colour wheel</code></div>
+            <div class="flow-step">
+              <div class="flow-head"><span class="flow-num"></span>Your lights</div>
+              <p class="hint flow-desc">The phone with the lights follows this person's colour and fades to each new one over Smoothness, below.</p>
+            </div>
           </div>
-          <p class="hint">How much of the screen must be clearly coloured to count. Below that, the colour above is shown.</p>
-          <label for="tune-soften">Softening</label>
-          <div class="row">
-            <input id="tune-soften" type="range" min="0" max="6" step="1">
-            <span id="tune-soften-value" class="value"></span>
-          </div>
-          <p class="hint">How many seconds of screen the colour is based on, so a quick flash doesn't change it.
-            Smoothness, below, is how long the lights take to fade to it.</p>
         </details>
         <label for="screen-fade">Smoothness</label>
         <div class="row">
@@ -353,7 +525,7 @@
           <span id="screen-fade-value" class="value">0.8 s</span>
         </div>
         <label class="check"><input id="screen-bright" type="checkbox" checked> Follow the screen's brightness</label>
-        <video id="screen-preview" muted playsinline hidden></video>
+        <div data-slot="preview"><div id="blk-preview"><video id="screen-preview" muted playsinline hidden></video></div></div>
       </details>
     </div>
 
@@ -604,7 +776,7 @@
   const PAIRED_KEY = 'led-lights-paired-before';
   // Bumped with every change to this page. Shown under the title, because GitHub Pages takes a
   // few minutes to publish an update.
-  const PAGE_VERSION = '1.5';
+  const PAGE_VERSION = '1.7';
   // Screen colour sync goes through Firestore, so no server of our own. Everything below is an
   // identifier that grants nothing on its own; the apiKey is pasted once on each device and kept in
   // that browser, as in Gym notes. Never run `firebase deploy`: Firebase Hosting would publish the
@@ -643,6 +815,13 @@
   // A new colour has to beat the one showing by this much to take over, and the same margin applies
   // between colour and no colour, so two near-equal choices don't flip back and forth.
   const SCREEN_STICKY = 1.25;
+  // How advanced detection sorts pixels: brightest channel under DARK is ignored; saturation from
+  // TINT up to COLOUR is a faint tint; COLOUR and up is clearly coloured.
+  const PIXEL_DARK = 0.12;
+  const PIXEL_TINT = 0.05;
+  const PIXEL_COLOUR = 0.2;
+  // Writes this computer made since Firebase's free day began (midnight US Pacific time).
+  const WRITES_KEY = 'led-lights-writes';
   const MAX_PRESETS = 20;
   const TUNE_CACHE_KEY = 'led-lights-tune';
   const TUNE_LOCKED_TEXT = 'Paste the access key and pick whose lights these are to load the presets.';
@@ -696,6 +875,7 @@
     { key: 'catchup', group: 'Lights', name: 'Catch up reconnecting lights', desc: 'A light that drops out briefly still gets the changes made in the last 20 seconds.' },
     { key: 'screen', group: 'Lights', name: 'Screen colour sync', desc: 'The lights follow the main colour on a computer screen, through the internet.' },
     { key: 'screenTune', group: 'Lights', name: 'Advanced colour detection', desc: 'Screen colour sync looks at the screen continuously, softens it over time, and follows your colour boost and favourite colours. Off: the simple detector, with white for screens without colour.', needs: ['screen'] },
+    { key: 'screenFlow', group: 'Lights', name: 'Show how the colour is picked', desc: 'Colour tuning shows every step live on the computer, from the shared screen to the colour sent, with each setting beside its step. Off: the compact Colour tuning.', needs: ['screen'] },
     { key: 'music', group: 'Music', name: 'Music reactive lights', desc: "Lights react to music, using their own mics or this phone's mic." },
     { key: 'replays', group: 'Replays', name: 'Replays', desc: 'Keep recorded colour changes and play them back, in the Replays tab.' },
     { key: 'record', group: 'Replays', name: 'Record colour changes', desc: 'Adds the ● Record colour changes button to the Colour tab.', needs: ['replays'] },
@@ -827,7 +1007,7 @@
   // them (at 1× speed), and replays saved before per-replay settings existed inherit them.
   const settings = {
     wheel: false, smoothing: 'smooth', speed: 1, repeat: false, repeatAll: false,
-    person: '', screenEvery: 3000, screenGap: 1, screenScan: 10, features: {}, collapsed: {},
+    person: '', screenEvery: 3000, screenGap: 1, screenScan: 10, flowMaths: true, features: {}, collapsed: {},
     ...loadJson(SETTINGS_KEY, {}),
   };
   if (!SMOOTHING_LABELS[settings.smoothing]) settings.smoothing = 'smooth';
@@ -864,14 +1044,22 @@
   // and a running preview.
   const editor = { draft: null, editingId: null, selected: 0, openLink: null, lastLoop: null, preview: null };
   let mainWheel = null;
+  // Whether this browser can share its screen: a computer, not a phone.
+  let screenCanSend = false;
   let seqWheel = null;
   // Screen colour sync: the computer sending its screen's colour, and the phone following it.
   const screenSend = {
     stream: null, firebase: null, capture: null, canvas: null, worker: null, busy: false, writing: false, last: null, sentAt: 0, sent: 0,
+    sends: [],
   };
   // Advanced detection's running picture of the screen: the newest measurement, its softened
   // average, and the band (or fallback favourite) showing, for the stickiness margin.
-  const screenScan = { measure: null, grabbing: null, soft: null, at: 0, pick: -1, fallback: -1, drawnAt: 0 };
+  // `pixels`, `source`, `result`, `simple` and `history` (the last minute of picked colours) are
+  // kept for the pictures in "How the colour is picked".
+  const screenScan = {
+    measure: null, grabbing: null, soft: null, at: 0, pick: -1, fallback: -1, drawnAt: 0,
+    pixels: null, source: null, result: null, simple: null, history: [],
+  };
   // This person's presets, as in Firestore: { active, presets: { id: preset } }. Edits apply at once
   // and are saved a second after the last change.
   const screenTune = { person: '', active: 'neutral', presets: {}, unsubscribe: null, saveTimer: null };
@@ -2951,14 +3139,19 @@
     $('#screen-status').textContent = text;
   }
 
+  function screenColourCss(c) {
+    return rgbToHex(hsvToRgb(c.h, c.s / 1000, 0.3 + 0.7 * (c.b / 100)));
+  }
+
   function showScreenSwatch(c) {
-    $('#screen-swatch').style.background = rgbToHex(hsvToRgb(c.h, c.s / 1000, 0.3 + 0.7 * (c.b / 100)));
+    $('#screen-swatch').style.background = screenColourCss(c);
   }
 
   // The colour an ambient light would pick: the strongest vivid hue on screen, ignoring greys and
   // near-black, plus the screen's overall brightness. Mostly grey or white screens give white.
-  // `data` is RGBA pixels; returns { h: 0-359, s: 0-1000, b: 1-100 }.
-  function screenColour(data) {
+  // `data` is RGBA pixels; returns { h: 0-359, s: 0-1000, b: 1-100 }. A `view` object, if given,
+  // gets the bins, the strongest one and its share, for the pictures.
+  function screenColour(data, view = {}) {
     const weight = new Float32Array(36);
     const sat = new Float32Array(36);
     const x = new Float32Array(36);
@@ -2991,6 +3184,7 @@
         bestWeight = w;
       }
     }
+    Object.assign(view, { weight, best, share: bestWeight / pixels });
     if (bestWeight < pixels * 0.03) return { h: 0, s: 0, b };
     let sx = 0, sy = 0, ss = 0;
     for (const i of [(best + 35) % 36, best, (best + 1) % 36]) {
@@ -3046,9 +3240,9 @@
       const max = Math.max(r, g, b), delta = max - Math.min(r, g, b);
       m.light += 0.2126 * r + 0.7152 * g + 0.0722 * b;
       const s = max ? delta / max : 0;
-      if (max < 0.12 || s < 0.05) continue;
+      if (max < PIXEL_DARK || s < PIXEL_TINT) continue;
       const { h } = rgbToHs([data[i], data[i + 1], data[i + 2]]);
-      if (s < 0.2) {
+      if (s < PIXEL_COLOUR) {
         m.tint[Math.round(h / 30) % EQ_BANDS.length] += 1;
         continue;
       }
@@ -3097,20 +3291,21 @@
 
   // Picks the colour from the softened screen: the strongest boosted 30° band, unless too little of
   // the screen is clearly coloured, when the best-liked favourite (leaned by any faint tint) stands
-  // in, or white without favourites. Returns the colour plus what the live view shows.
-  function pickScreenColour(soft, preset) {
+  // in, or white without favourites. `prev` holds what's showing, for the stickiness margin; null
+  // judges the screen on its own. Returns the colour plus what the pictures show.
+  function pickScreenColour(soft, preset, prev = screenScan) {
     const boosts = binBoosts(preset.boost);
     const around = (k) => [(k + 35) % 36, k, (k + 1) % 36];
     const scores = Array.from({ length: 36 }, (_, k) => around(k).reduce((sum, j) => sum + soft.weight[j] * boosts[j], 0));
     const best = argmax(scores);
     let pick = best;
-    const prev = screenScan.pick;
-    const binGap = Math.abs(((best - prev + 54) % 36) - 18);
-    if (prev >= 0 && binGap > 2) {
+    const was = prev ? prev.pick : -1;
+    const binGap = Math.abs(((best - was + 54) % 36) - 18);
+    if (was >= 0 && binGap > 2) {
       // The colour showing may have drifted a little; it's whichever bin is strongest near it.
-      let near = prev;
+      let near = was;
       for (let d = -2; d <= 2; d++) {
-        const j = (prev + d + 36) % 36;
+        const j = (was + d + 36) % 36;
         if (scores[j] > scores[near]) near = j;
       }
       if (scores[best] < scores[near] * SCREEN_STICKY) pick = near;
@@ -3118,8 +3313,10 @@
     const band = around(pick);
     const share = band.reduce((sum, j) => sum + (boosts[j] > 0 ? soft.count[j] : 0), 0);
     const b = Math.round(10 + 90 * Math.sqrt(soft.light));
-    const need = preset.minColour * (screenScan.pick >= 0 ? 1 : SCREEN_STICKY);
-    const view = { boosts, share, pick: -1, fallback: -1 };
+    const need = preset.minColour * (prev && prev.pick < 0 ? SCREEN_STICKY : 1);
+    const tintTotal = soft.tint.reduce((sum, v) => sum + v, 0);
+    const liking = preset.favourite.map((f, i) => f * (1 + 3 * (tintTotal ? soft.tint[i] / tintTotal : 0)));
+    const view = { boosts, share, need, liking, pick: -1, fallback: -1 };
     if (scores[pick] > 0 && share >= need) {
       let sx = 0, sy = 0, ss = 0, sw = 0;
       band.forEach((j) => {
@@ -3132,12 +3329,10 @@
       // LEDs look washed out at screen saturation, so push it up a little.
       return { ...view, pick, colour: { h, s: Math.min(1000, Math.round((ss / sw) * 1300)), b } };
     }
-    const tintTotal = soft.tint.reduce((sum, v) => sum + v, 0);
-    const liking = preset.favourite.map((f, i) => f * (1 + 3 * (tintTotal ? soft.tint[i] / tintTotal : 0)));
     let fallback = argmax(liking);
     if (!(liking[fallback] > 0)) return { ...view, colour: { h: 0, s: 0, b } };
-    const was = screenScan.fallback;
-    if (was >= 0 && liking[was] > 0 && liking[fallback] < liking[was] * SCREEN_STICKY) fallback = was;
+    const wasFallback = prev ? prev.fallback : -1;
+    if (wasFallback >= 0 && liking[wasFallback] > 0 && liking[fallback] < liking[wasFallback] * SCREEN_STICKY) fallback = wasFallback;
     return { ...view, fallback, colour: { h: fallback * 30, s: Math.round(preset.strength * 1000), b } };
   }
 
@@ -3152,80 +3347,267 @@
       screenScan.grabbing = capture.grabFrame().then((frame) => {
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         ctx.drawImage(frame, 0, 0, 64, 36);
+        const source = { width: frame.width, height: frame.height };
         frame.close();
-        if (send.capture === capture) screenScan.measure = measureScreen(ctx.getImageData(0, 0, 64, 36).data);
+        if (send.capture !== capture) return;
+        const { data } = ctx.getImageData(0, 0, 64, 36);
+        Object.assign(screenScan, { measure: measureScreen(data), pixels: data, source });
       }).catch(() => { /* No new frame yet: the last one stands. */ })
         .finally(() => { screenScan.grabbing = null; });
     }
     if (!screenScan.measure) return;
     const now = Date.now();
+    const preset = activePreset();
     softenScreen(screenScan.measure, now);
-    const result = pickScreenColour(screenScan.soft, activePreset());
+    const result = pickScreenColour(screenScan.soft, preset);
     screenScan.pick = result.pick;
     screenScan.fallback = result.fallback;
+    screenScan.result = result;
     const { colour } = result;
+    rememberScreenColour(now, colour, pickScreenColour(screenScan.measure, preset, null).colour);
     showScreenSwatch(colour);
-    drawTuneLive(result);
-    if (!send.writing && screenSendDue(colour, now)) {
+    drawScreenViews();
+    const reason = send.writing ? '' : screenSendReason(colour, now);
+    if (reason) {
       send.writing = true;
       const { firebase } = send;
       firebase.fs.setDoc(screenDoc(firebase), { ...colour, t: now })
-        .then(() => Object.assign(send, { last: colour, sentAt: now, sent: send.sent + 1 }))
+        .then(() => recordScreenSend(colour, now, reason))
         .catch(screenSendFailed)
         .finally(() => { send.writing = false; });
     }
     if (send.capture) setScreenStatus(`Sending to ${settings.person}'s lights · ${send.sent.toLocaleString()} updates sent`);
   }
 
+  // The last minute of picked colours, with what each look alone would have picked (`raw`).
+  function rememberScreenColour(t, colour, raw = colour) {
+    const history = screenScan.history;
+    history.push({ t, colour, raw });
+    while (history.length && history[0].t < t - 60000) history.shift();
+  }
+
   function resetScreenScan() {
-    Object.assign(screenScan, { measure: null, soft: null, at: 0, pick: -1, fallback: -1 });
+    Object.assign(screenScan, {
+      measure: null, soft: null, at: 0, pick: -1, fallback: -1, pixels: null, source: null, result: null, simple: null, history: [],
+    });
     $('#tune-live').hidden = true;
     $('#tune-live-text').hidden = true;
+    $('#tune-flow').classList.remove('live');
+  }
+
+  // The pictures, at most 5 times a second, and only while someone can see them.
+  function drawScreenViews() {
+    const now = performance.now();
+    const tune = $('#screen-tune');
+    if (now - screenScan.drawnAt < 200 || document.hidden || tune.hidden || !tune.open) return;
+    screenScan.drawnAt = now;
+    if (featureOn('screenFlow')) drawFlow();
+    else if (screenScan.result && featureOn('screenTune')) drawTuneLive(screenScan.result);
+  }
+
+  // Sizes a canvas to its CSS size at the screen's pixel density; returns null while it's hidden.
+  function fitCanvas(canvas) {
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    const ctx = w && h ? canvas.getContext('2d') : null;
+    if (!ctx) return null;
+    const dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    return { ctx, w, h };
+  }
+
+  // Bars round the colour wheel (36 bins of 10°, or 12 bands of 30°), red first and shifted half a
+  // band so each band's bars sit under its equalizer slider. `under` is drawn faintly behind;
+  // `marked` bars are underlined. `offset` is where a bar's hue sits (the simple detector's bins
+  // start at a multiple of 10°, so their middle is 5° on).
+  function drawHueBars(canvas, { values, under = null, marked = [], offset = 0 }) {
+    const fit = fitCanvas(canvas);
+    if (!fit) return;
+    const { ctx, w, h } = fit;
+    const n = values.length;
+    const step = 360 / n;
+    const top = Math.max(1e-9, ...values, ...(under || []));
+    const bw = w / n;
+    const xOf = (i) => ((((i * step + offset - step / 2 + 15) % 360) + 360) % 360 / 360) * w;
+    for (let i = 0; i < n; i++) {
+      const hue = i * step + offset;
+      if (under) {
+        const v = (under[i] / top) * (h - 6);
+        ctx.fillStyle = `hsla(${hue}, 90%, 55%, .3)`;
+        ctx.fillRect(xOf(i) + 1, h - 4 - v, bw - 2, v);
+      }
+      const v = (values[i] / top) * (h - 6);
+      const inset = under ? Math.min(3, bw / 4) : 1;
+      ctx.fillStyle = `hsl(${hue}, 90%, 55%)`;
+      ctx.fillRect(xOf(i) + inset, h - 4 - v, bw - 2 * inset, v);
+    }
+    ctx.fillStyle = '#fff';
+    marked.forEach((i) => ctx.fillRect(xOf(i), h - 2, bw, 2));
+  }
+
+  // Lanes of colour over the last `span` ms, newest on the right; each entry lasts until the next.
+  // `dots` (sends) go on a lane of their own: big for a big change, small for a smaller change,
+  // hollow for a check-in.
+  function drawTimeline(canvas, lanes, span, dots = null) {
+    const fit = fitCanvas(canvas);
+    if (!fit) return;
+    const { ctx, w, h } = fit;
+    const now = Date.now();
+    const xOf = (t) => ((t - (now - span)) / span) * w;
+    const lh = h / (lanes.length + (dots ? 1 : 0));
+    lanes.forEach((lane, row) => {
+      lane.forEach((e, i) => {
+        // Whole pixels, so neighbouring looks meet without a seam.
+        const x0 = Math.max(0, Math.floor(xOf(e.t)));
+        const x1 = i + 1 < lane.length ? Math.ceil(xOf(lane[i + 1].t)) : w;
+        if (x1 <= 0) return;
+        ctx.fillStyle = screenColourCss(e.colour);
+        ctx.fillRect(x0, Math.round(row * lh + 2), x1 - x0, Math.round(lh - 4));
+      });
+    });
+    if (!dots) return;
+    const y = lanes.length * lh + lh / 2;
+    dots.forEach((d) => {
+      const x = xOf(d.t);
+      if (x < 0) return;
+      ctx.beginPath();
+      ctx.arc(x, y, d.reason === 'jump' || d.reason === 'first' ? 6 : 4, 0, Math.PI * 2);
+      if (d.reason === 'checkin') {
+        ctx.strokeStyle = '#9aa3b2';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = screenColourCss(d.colour);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = d.reason === 'jump' || d.reason === 'first' ? 2 : 1;
+        ctx.stroke();
+      }
+    });
   }
 
   // What the detector sees, while this computer sends and Colour tuning is open: faint bars are the
   // screen's colours, solid bars the same after the boost, and the picked band is underlined.
   function drawTuneLive({ boosts, share, pick, fallback, colour }) {
-    const now = performance.now();
-    if (now - screenScan.drawnAt < 200 || document.hidden || !$('#screen-tune').open) return;
-    screenScan.drawnAt = now;
     const canvas = $('#tune-live');
     const text = $('#tune-live-text');
     canvas.hidden = false;
     text.hidden = false;
-    const w = canvas.clientWidth;
-    const ht = canvas.clientHeight;
-    const ctx = w && ht ? canvas.getContext('2d') : null;
-    if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(ht * dpr)) {
-      canvas.width = Math.round(w * dpr);
-      canvas.height = Math.round(ht * dpr);
-    }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, ht);
     const { weight } = screenScan.soft;
-    const top = Math.max(1e-6, ...weight.map((v, k) => Math.max(v, v * boosts[k])));
-    // Shifted by 15° so each band's three bars sit under its slider, red first.
-    const xOf = (k) => (((k * 10 + 10) % 360) / 360) * w;
-    const bw = w / 36;
-    for (let k = 0; k < 36; k++) {
-      const hue = k * 10;
-      const raw = (weight[k] / top) * (ht - 6);
-      const boosted = ((weight[k] * boosts[k]) / top) * (ht - 6);
-      ctx.fillStyle = `hsla(${hue}, 90%, 55%, .3)`;
-      ctx.fillRect(xOf(k) + 1, ht - 4 - raw, bw - 2, raw);
-      ctx.fillStyle = `hsl(${hue}, 90%, 55%)`;
-      ctx.fillRect(xOf(k) + 3, ht - 4 - boosted, bw - 6, boosted);
-    }
-    if (pick >= 0) {
-      ctx.fillStyle = '#fff';
-      [(pick + 35) % 36, pick, (pick + 1) % 36].forEach((k) => ctx.fillRect(xOf(k), ht - 2, bw, 2));
-    }
+    drawHueBars(canvas, {
+      values: weight.map((v, k) => v * boosts[k]), under: weight,
+      marked: pick >= 0 ? [(pick + 35) % 36, pick, (pick + 1) % 36] : [],
+    });
     const preset = activePreset();
     const shown = pick >= 0 ? EQ_BANDS[Math.round(colour.h / 30) % EQ_BANDS.length]
       : fallback >= 0 ? `no colour, so your favourite, ${EQ_BANDS[fallback]}` : 'no colour, so white';
     text.textContent = `Clearly coloured: ${(share * 100).toFixed(1)}% of the screen (needs ${(preset.minColour * 100).toFixed(1)}%) · showing ${shown}`;
+  }
+
+  function percent(share) {
+    return `${(share * 100).toFixed(1)}%`;
+  }
+
+  function bandName(c) {
+    return c.s === 0 ? 'white' : EQ_BANDS[Math.round(c.h / 30) % EQ_BANDS.length];
+  }
+
+  // "How the colour is picked": every picture from the latest look, for either detector.
+  function drawFlow() {
+    const { pixels, source, history } = screenScan;
+    const advanced = featureOn('screenTune');
+    const result = advanced ? screenScan.result : screenScan.simple;
+    if (!pixels || !source || !result) return;
+    $('#tune-flow').classList.add('live');
+    const rate = Math.round(10000 / screenSampleMs()) / 10;
+    const screenPixels = source.width * source.height;
+    $('#flow-cap-screen').textContent = `${source.width.toLocaleString()} × ${source.height.toLocaleString()} = ${screenPixels.toLocaleString()} pixels, `
+      + `looked at ${rate.toLocaleString()} ${rate === 1 ? 'time' : 'times'} a second`;
+    $('#flow-maths-shrink').textContent = `each block of ${Math.round(source.width / 64).toLocaleString()} × ${Math.round(source.height / 36).toLocaleString()} screen pixels → 1 pixel, their average`;
+
+    // Shrunk, then sorted: clear colours as they are, faint tints pale, ignored pixels dark.
+    const shrunk = $('#flow-shrunk').getContext('2d');
+    shrunk.putImageData(new ImageData(new Uint8ClampedArray(pixels), 64, 36), 0, 0);
+    $('#flow-cap-shrunk').textContent = `64 × 36 = 2,304 pixels, ${Math.round(screenPixels / 2304).toLocaleString()}× fewer`;
+    const sorted = new ImageData(64, 36);
+    const kinds = [0, 0, 0];
+    for (let i = 0; i < pixels.length; i += 4) {
+      const r = pixels[i] / 255, g = pixels[i + 1] / 255, b = pixels[i + 2] / 255;
+      const max = Math.max(r, g, b), delta = max - Math.min(r, g, b);
+      const s = max ? delta / max : 0;
+      let kind = 2;
+      if (advanced) kind = max < PIXEL_DARK || s < PIXEL_TINT ? 0 : s < PIXEL_COLOUR ? 1 : 2;
+      else if (max < 0.12 || delta < 0.08) kind = 0;
+      kinds[kind]++;
+      const keep = [0.12, 0.4, 1][kind];
+      for (let c = 0; c < 3; c++) sorted.data[i + c] = Math.round(pixels[i + c] * keep + 15 * (1 - keep));
+      sorted.data[i + 3] = 255;
+    }
+    $('#flow-sorted').getContext('2d').putImageData(sorted, 0, 0);
+    const total = pixels.length / 4;
+    $('#flow-cap-sorted').textContent = advanced
+      ? `Colour ${percent(kinds[2] / total)} · faint tint ${percent(kinds[1] / total)} · ignored ${percent(kinds[0] / total)}`
+      : `Colour ${percent(kinds[2] / total)} · ignored ${percent(kinds[0] / total)}`;
+
+    const { colour } = result;
+    if (advanced) {
+      const { measure, soft } = screenScan;
+      const { boosts, share, need, liking, pick, fallback } = result;
+      drawHueBars($('#flow-raw'), { values: measure.weight });
+      drawHueBars($('#flow-soft'), { values: soft.weight });
+      const recent = history.filter((e) => e.t >= Date.now() - 10000);
+      drawTimeline($('#flow-history'), [recent.map((e) => ({ t: e.t, colour: e.raw })), recent], 10000);
+      drawHueBars($('#flow-pick'), {
+        values: soft.weight.map((v, k) => v * boosts[k]), under: soft.weight,
+        marked: pick >= 0 ? [(pick + 35) % 36, pick, (pick + 1) % 36] : [],
+      });
+      showFlowMeter(share, need);
+      $('#flow-cap-pick').textContent = `Clearly coloured in the best band: ${percent(share)} of the screen (needs ${percent(need)})`
+        + ` · ${pick >= 0 ? `picked ${bandName(colour)}` : 'not enough colour'}`;
+      const tintTotal = soft.tint.reduce((sum, v) => sum + v, 0);
+      drawHueBars($('#flow-fav'), {
+        values: liking.map((v) => v / 20), under: soft.tint.map((v) => (tintTotal ? v / tintTotal : 0)),
+        marked: fallback >= 0 ? [fallback] : [],
+      });
+      $('#flow-fav-step').classList.toggle('dim', pick >= 0);
+      $('#flow-cap-fav').textContent = pick >= 0 ? "Not needed now: there's enough colour."
+        : fallback >= 0 ? `No colour, so your favourite: ${EQ_BANDS[fallback]}.` : 'No colour and no favourites, so white.';
+    } else {
+      const { view } = result;
+      drawHueBars($('#flow-raw'), { values: view.weight, offset: 5 });
+      drawHueBars($('#flow-pick'), {
+        values: view.weight, offset: 5,
+        marked: colour.s ? [(view.best + 35) % 36, view.best, (view.best + 1) % 36] : [],
+      });
+      showFlowMeter(view.share, 0.03);
+      $('#flow-cap-pick').textContent = `Strongest band: ${percent(view.share)} of the screen's weight (needs 3.0%)`
+        + ` · ${colour.s ? `picked ${bandName(colour)}` : 'not enough colour, so white'}`;
+    }
+
+    $('#flow-swatch').style.background = screenColourCss(colour);
+    $('#flow-colour-text').textContent = colour.s
+      ? `${bandName(colour)} · hue ${colour.h}° · saturation ${(colour.s / 10).toFixed(1)}% · brightness ${colour.b}%`
+      : `White · brightness ${colour.b}%`;
+
+    const sends = screenSend.sends;
+    drawTimeline($('#flow-sent'), [history], 60000, sends);
+    const last = sends[sends.length - 1];
+    const reasons = { first: 'the first colour', jump: 'a big change', drift: 'a smaller change', checkin: 'a check-in' };
+    $('#flow-cap-sent').textContent = `Last minute: what's picked (top) and each send (big dot: big change, small: smaller change, ring: check-in). `
+      + (last ? `Last sent ${((Date.now() - last.t) / 1000).toFixed(1)} s ago, for ${reasons[last.reason]}. ` : '')
+      + `${sends.length.toLocaleString()} ${sends.length === 1 ? 'write' : 'writes'} in the last minute, `
+      + `${dailyWrites().toLocaleString()} from this computer since midnight US Pacific time.`;
+  }
+
+  // How much of the screen is coloured, against what's needed (the marker), on a 0–25% scale.
+  function showFlowMeter(share, need) {
+    $('#flow-meter-fill').style.width = `${Math.min(100, (share / 0.25) * 100)}%`;
+    $('#flow-meter-mark').style.left = `${Math.min(100, (need / 0.25) * 100)}%`;
   }
 
   // ---- Colour tuning presets, per person in Firestore ----
@@ -3387,7 +3769,7 @@
     const mine = !!screenTune.presets[screenTune.active];
     $('#btn-tune-rename').hidden = !mine;
     $('#btn-tune-delete').hidden = !mine;
-    document.querySelectorAll('#screen-tune input, #screen-tune select, #screen-tune button').forEach((el) => { el.disabled = !ready; });
+    document.querySelectorAll(TUNE_CONTROLS).forEach((el) => { el.disabled = !ready; });
     if (!ready) setTuneStatus(TUNE_LOCKED_TEXT);
     else if ($('#tune-status').textContent === TUNE_LOCKED_TEXT) setTuneStatus('');
     const showBand = (el, v, text) => {
@@ -3403,6 +3785,35 @@
     $('#tune-min-value').textContent = `${(preset.minColour * 100).toFixed(1)}%`;
     $('#tune-soften').value = String(SOFTEN_STEPS.indexOf(preset.soften));
     $('#tune-soften-value').textContent = softenLabel(preset.soften);
+  }
+
+  // The preset's own controls, locked until the presets can load.
+  const TUNE_CONTROLS = ['#tune-presets', '#blk-boost', '#blk-fav', '#blk-strength', '#blk-min', '#blk-soften']
+    .map((id) => `${id} input, ${id} select, ${id} button`).join(', ');
+
+  // Places each setting for the layout in use: the compact Colour tuning, or "How the colour is
+  // picked", where each sits beside its step. The same controls move, so nothing is duplicated.
+  function layoutTune() {
+    const flow = featureOn('screenFlow');
+    const advanced = featureOn('screenTune');
+    ['preview', 'scan', 'send', 'soften', 'boost', 'min', 'fav', 'strength'].forEach((key) => {
+      document.querySelector(flow ? `[data-flow-slot="${key}"]` : `[data-slot="${key}"]`).append($(`#blk-${key}`));
+    });
+    $('#screen-tune').hidden = !advanced && !flow;
+    $('#tune-title').textContent = advanced ? 'Colour tuning' : 'How the colour is picked';
+    $('#tune-presets').hidden = !advanced;
+    $('#tune-classic').hidden = flow;
+    $('#tune-flow').hidden = !flow;
+    $('#tune-flow').classList.toggle('no-maths', !settings.flowMaths);
+    document.querySelectorAll('#tune-flow [data-mode]').forEach((el) => { el.hidden = el.dataset.mode !== (advanced ? 'advanced' : 'simple'); });
+    $('#screen-send-options').hidden = !screenCanSend || flow;
+    $('#blk-send').hidden = !screenCanSend;
+    $('#blk-scan').hidden = !screenCanSend || !advanced;
+    // The simple detector has no preset, so its flow has no preset settings.
+    ['boost', 'min', 'fav', 'strength', 'soften'].forEach((key) => { $(`#blk-${key}`).hidden = !advanced; });
+    $('#flow-idle').textContent = screenCanSend
+      ? 'Press Send this screen to watch each step live.'
+      : 'The pictures show on the computer while it sends. You can tune here and watch your lights change.';
   }
 
   function buildEqualizer(root, key, max, step) {
@@ -3433,6 +3844,12 @@
     $('#btn-tune-rename').addEventListener('click', renamePreset);
     $('#btn-tune-delete').addEventListener('click', deletePreset);
     $('#screen-tune').addEventListener('toggle', watchTune);
+    $('#flow-maths').checked = settings.flowMaths;
+    $('#flow-maths').addEventListener('change', (e) => {
+      settings.flowMaths = e.target.checked;
+      saveSettings();
+      $('#tune-flow').classList.toggle('no-maths', !settings.flowMaths);
+    });
     renderTune();
   }
 
@@ -3492,7 +3909,7 @@
       { type: 'text/javascript' });
     Object.assign(screenSend, {
       stream, firebase, capture: new ImageCapture(track), canvas: new OffscreenCanvas(64, 36),
-      worker: new Worker(URL.createObjectURL(ticker)), busy: false, writing: false, last: null, sentAt: 0, sent: 0,
+      worker: new Worker(URL.createObjectURL(ticker)), busy: false, writing: false, last: null, sentAt: 0, sent: 0, sends: [],
     });
     resetScreenScan();
     watchTune();
@@ -3518,14 +3935,21 @@
       const frame = await screenSend.capture.grabFrame();
       const ctx = screenSend.canvas.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(frame, 0, 0, 64, 36);
+      const source = { width: frame.width, height: frame.height };
       frame.close();
-      const colour = screenColour(ctx.getImageData(0, 0, 64, 36).data);
-      showScreenSwatch(colour);
+      const { data } = ctx.getImageData(0, 0, 64, 36);
+      const view = {};
+      const colour = screenColour(data, view);
       const now = Date.now();
-      if (screenSendDue(colour, now)) {
+      Object.assign(screenScan, { pixels: data, source, simple: { view, colour } });
+      rememberScreenColour(now, colour);
+      showScreenSwatch(colour);
+      drawScreenViews();
+      const reason = screenSendReason(colour, now);
+      if (reason) {
         const { fs } = screenSend.firebase;
         await fs.setDoc(screenDoc(screenSend.firebase), { ...colour, t: now });
-        Object.assign(screenSend, { last: colour, sentAt: now, sent: screenSend.sent + 1 });
+        recordScreenSend(colour, now, reason);
       }
       setScreenStatus(`Sending to ${settings.person}'s lights · ${screenSend.sent.toLocaleString()} updates sent`);
     } catch (err) {
@@ -3535,14 +3959,38 @@
     }
   }
 
-  function screenSendDue(colour, now) {
+  // Why `colour` should be sent now ('first', 'jump', 'drift' or 'checkin'), or '' if it shouldn't.
+  function screenSendReason(colour, now) {
     const { last, sentAt } = screenSend;
     const since = now - sentAt;
     const gap = settings.screenGap * 1000;
-    return !last
-      || (since >= gap && screenColourJumped(colour, last))
-      || (since >= Math.max(gap, settings.screenEvery) && screenColourMoved(colour, last))
-      || since >= SCREEN_HEARTBEAT_MS;
+    if (!last) return 'first';
+    if (since >= gap && screenColourJumped(colour, last)) return 'jump';
+    if (since >= Math.max(gap, settings.screenEvery) && screenColourMoved(colour, last)) return 'drift';
+    return since >= SCREEN_HEARTBEAT_MS ? 'checkin' : '';
+  }
+
+  function recordScreenSend(colour, now, reason) {
+    Object.assign(screenSend, { last: colour, sentAt: now, sent: screenSend.sent + 1 });
+    screenSend.sends.push({ t: now, colour, reason });
+    while (screenSend.sends[0].t < now - 60000) screenSend.sends.shift();
+    countDailyWrite();
+  }
+
+  // Firebase's free day starts at midnight US Pacific time.
+  function firebaseDay() {
+    return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles' }).format(new Date());
+  }
+
+  function dailyWrites() {
+    const stored = loadJson(WRITES_KEY, {});
+    return stored && stored.day === firebaseDay() ? stored.count : 0;
+  }
+
+  function countDailyWrite() {
+    try {
+      localStorage.setItem(WRITES_KEY, JSON.stringify({ day: firebaseDay(), count: dailyWrites() + 1 }));
+    } catch { /* only feeds the count shown in the pictures */ }
   }
 
   function screenSendFailed(err) {
@@ -3680,9 +4128,16 @@
     });
     // Phones can't share their screen; the computer side is for Chrome or Edge on a computer.
     const canSend = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia && window.ImageCapture);
+    screenCanSend = canSend;
     $('#btn-screen-send').hidden = !canSend;
-    $('#screen-send-options').hidden = !canSend;
     setupTune();
+    layoutTune();
+    // On the computer, Colour tuning opens with the page every time; on phones it stays folded
+    // unless it was left open.
+    if (canSend) {
+      $('#screen-tune').removeAttribute('data-collapse');
+      $('#screen-tune').open = true;
+    }
     renderFirebaseUi();
   }
 
@@ -3779,8 +4234,7 @@
     $('.create').hidden = !on.record && !on.sequences;
     $('#diagnostics').hidden = !on.diagnostics;
     $('#sec-screen').hidden = !on.screen;
-    $('#screen-tune').hidden = !on.screenTune;
-    $('#screen-scan-row').hidden = !on.screenTune;
+    layoutTune();
     if (!on.screen) {
       stopScreenFollow();
       stopScreenSend();

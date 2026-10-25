@@ -2,7 +2,7 @@
 
 The goal is the colour an ambient TV light would choose: the strongest real colour on screen, not the average. Averaging a half-red, half-green screen gives a muddy brown; both detectors below pick red.
 
-There are two detectors. **Advanced colour detection** (Settings, on by default) is the tunable one. Turning it off gives the simple one.
+There are two detectors. **Advanced colour detection** (Settings, on by default) is the tunable one. Turning it off gives the simple one. With **Show how the colour is picked** on (also the default), the page shows each step below live on the computer while it sends, with the formulas behind a Show the maths switch.
 
 ## Advanced detection
 
