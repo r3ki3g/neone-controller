@@ -46,6 +46,26 @@ Install it with `adb install -r MyLEDLights_v1.1.apk` (USB debugging on), or cop
 
 Limit: "This phone's mic" music patterns only listen while the app is open, because Android doesn't let a background app use the mic without a separate permission type.
 
+## Screen colour sync
+
+The lights follow the main colour on a computer screen, like an ambient TV light. On a computer (Chrome or Edge, Mac or Windows), open the website, then press **Send this screen** in the Colour tab: the page looks at the screen twice a second and works out the strongest vivid colour and the overall brightness. A big jump, like a cut from ocean to forest, is sent straight away (at most once a second). Smaller drifts are sent on the interval picked in the section (1–30 s, default 3 s). An unchanging screen still checks in every 30 s. On the phone with the lights, press **Follow my screen**: it fades the lights to each new colour.
+
+It runs through Firestore in the `neon-controller` Firebase project, with no server of our own:
+
+- **Access key:** the Firebase `apiKey` is not in this repo. Paste it once on each device in the Screen colour sync section, as `AIza…---YourName`. The name picks whose lights these are (Prabhashwara, Chamuth or Test), and each person's computer reaches only their own phone. The other config values in `index.html` are identifiers that grant nothing on their own.
+- **Sign-in:** anonymous Firebase sign-in. `firebase/firestore.rules` lets signed-in visitors read and write only `users/<name>/live/screen`, and only as `{ h, s, b, t }`.
+- **Never run `firebase deploy`:** Firebase Hosting would publish the whole config, key included.
+
+Firebase console setup, done once:
+
+1. Firestore Database created in production mode, and `firebase/firestore.rules` published under Rules.
+2. Authentication → Sign-in method → Anonymous enabled; Authorized domains include `r3ki3g.github.io`.
+3. Recommended: Google Cloud Console → APIs & Services → Credentials → Browser key → website restriction `r3ki3g.github.io/*`.
+
+Testing without the real project: in `firebase/`, run `firebase emulators:start --only firestore,auth --project neon-controller-cf97b`, then open the page with `?emulator=127.0.0.1` and any key ending in `---Prabhashwara`.
+
+Limits: copy-protected video (Netflix, Disney+) is captured as black. On a Mac, Chrome needs the Screen & System Audio Recording permission.
+
 ## Features
 
 - **Colour:** one colour picker and presets for every light, plus a shared brightness slider from 1% to 100%. On phones it's a built-in colour wheel that updates the lights live while you drag, because Android Chrome's own picker only reports the colour when its dialog closes. Its outer ring is a dimmer from Min to Max; it never switches the lights off, and overshooting an end while dragging stays at that end. Desktop can switch to the wheel with "Use colour wheel".

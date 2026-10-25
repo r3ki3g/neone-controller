@@ -123,6 +123,11 @@
     .show-head .name { font-weight: 600; word-break: break-word; }
     #now-playing { border: 1px solid var(--accent); border-radius: 10px; padding: 12px; margin: 12px 0; }
     .countdown { font-weight: 600; color: var(--warn); }
+    .screen-swatch { flex: none; width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border); background: var(--bg); }
+    #fb-key { flex: 1; min-width: 180px; font-family: ui-monospace, Menlo, monospace; }
+    #fb-person { flex: 1; min-width: 160px; }
+    #screen-every { max-width: 160px; }
+    #screen-preview { display: block; width: 100%; max-height: 180px; margin-top: 10px; border-radius: 8px; background: #000; }
     .topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
     .topbar h1 { margin: 0; }
     details.section { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 12px; }
@@ -231,6 +236,53 @@
           <button id="btn-seq-new" class="secondary">＋ Create colour sequence</button>
         </div>
       </div>
+      <details id="sec-screen" class="section" data-collapse="screen" open>
+        <summary>Screen colour sync <span class="badge pro">PRO</span></summary>
+        <p class="hint">The lights follow the main colour on a computer screen, like an ambient TV light.
+          On the computer, open this page and press Send this screen; on the phone with the lights, press Follow my screen.
+          Both must be set to the same person. Copy-protected video (Netflix, Disney+) shows up black and can't be followed.</p>
+        <div id="fb-locked">
+          <label for="fb-key">Access key</label>
+          <div class="row">
+            <input id="fb-key" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AIza…---YourName">
+            <button id="btn-fb-unlock">Unlock</button>
+          </div>
+          <p class="hint">Paste the project's access key once on each device. Ending it with ---YourName also picks who you are.</p>
+        </div>
+        <div id="fb-unlocked" hidden>
+          <label for="fb-person">Whose lights</label>
+          <div class="row">
+            <select id="fb-person"></select>
+            <button id="btn-fb-forget" class="link">Remove the key from this device</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top: 12px">
+          <button id="btn-screen-follow" class="secondary">▶ Follow my screen</button>
+          <button id="btn-screen-send" class="secondary">🖥 Send this screen</button>
+        </div>
+        <div class="row" style="margin-top: 10px">
+          <span id="screen-swatch" class="screen-swatch"></span>
+          <span id="screen-status" class="hint"></span>
+        </div>
+        <div id="screen-send-options">
+          <label for="screen-every">Small colour changes are sent every</label>
+          <select id="screen-every">
+            <option value="1000">1 s</option>
+            <option value="3000">3 s</option>
+            <option value="5000">5 s</option>
+            <option value="10000">10 s</option>
+            <option value="30000">30 s</option>
+          </select>
+          <p class="hint">Big changes, like a cut from ocean to forest, are sent straight away (at most once a second).</p>
+        </div>
+        <label for="screen-fade">Smoothness</label>
+        <div class="row">
+          <input id="screen-fade" type="range" min="0" max="3000" step="100" value="800">
+          <span id="screen-fade-value" class="value">0.8 s</span>
+        </div>
+        <label class="check"><input id="screen-bright" type="checkbox" checked> Follow the screen's brightness</label>
+        <video id="screen-preview" muted playsinline hidden></video>
+      </details>
     </div>
 
     <div class="panel" data-panel="scenes" hidden>
@@ -480,7 +532,31 @@
   const PAIRED_KEY = 'led-lights-paired-before';
   // Bumped with every change to this page. Shown under the title, because GitHub Pages takes a
   // few minutes to publish an update.
-  const PAGE_VERSION = '1.1';
+  const PAGE_VERSION = '1.3';
+  // Screen colour sync goes through Firestore, so no server of our own. Everything below is an
+  // identifier that grants nothing on its own; the apiKey is pasted once on each device and kept in
+  // that browser, as in Gym notes. Never run `firebase deploy`: Firebase Hosting would publish the
+  // whole config, key included.
+  const FIREBASE_CONFIG = {
+    authDomain: 'neon-controller-cf97b.firebaseapp.com',
+    projectId: 'neon-controller-cf97b',
+    storageBucket: 'neon-controller-cf97b.firebasestorage.app',
+    messagingSenderId: '633453737318',
+    appId: '1:633453737318:web:7e3892e31789c28512c4a7',
+  };
+  const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/11.0.2';
+  const KEY_STORAGE = 'led-lights-apikey';
+  // Each person's computer sends to their own phone: users/<name>/live/screen.
+  const PEOPLE = ['Prabhashwara', 'Chamuth', 'Test'];
+  // `?emulator=<host>` talks to the local Firebase emulators instead, for testing.
+  const EMULATOR = new URLSearchParams(location.search).get('emulator');
+  // The computer looks at its screen twice a second. A big jump in colour goes out at once (at
+  // most once a second); smaller drifts wait for the interval picked in the section; an unchanging
+  // screen still checks in every 30 s, and the phone calls it gone after 45 s without news.
+  const SCREEN_SAMPLE_MS = 500;
+  const SCREEN_MIN_GAP_MS = 1000;
+  const SCREEN_HEARTBEAT_MS = 30000;
+  const SCREEN_STALE_MS = 45000;
   const TAB_KEY = 'led-lights-tab';
   const TABS = ['colour', 'scenes', 'music', 'shows'];
   const SETTINGS_KEY = 'led-lights-settings';
@@ -521,6 +597,7 @@
   const FEATURES = [
     { key: 'scenes', group: 'Lights', name: 'Scenes', desc: 'Built-in light effects such as Rainbow and Strobe, in the Scenes tab.' },
     { key: 'catchup', group: 'Lights', name: 'Catch up reconnecting lights', desc: 'A light that drops out briefly still gets the changes made in the last 20 seconds.' },
+    { key: 'screen', group: 'Lights', name: 'Screen colour sync', desc: 'The lights follow the main colour on a computer screen, through the internet.' },
     { key: 'music', group: 'Music', name: 'Music reactive lights', desc: "Lights react to music, using their own mics or this phone's mic." },
     { key: 'replays', group: 'Replays', name: 'Replays', desc: 'Keep recorded colour changes and play them back, in the Replays tab.' },
     { key: 'record', group: 'Replays', name: 'Record colour changes', desc: 'Adds the ● Record colour changes button to the Colour tab.', needs: ['replays'] },
@@ -651,10 +728,13 @@
   // smoothing, speed and repeat are the playback settings used last: new replays start with
   // them (at 1× speed), and replays saved before per-replay settings existed inherit them.
   const settings = {
-    wheel: false, smoothing: 'smooth', speed: 1, repeat: false, repeatAll: false, features: {}, collapsed: {},
+    wheel: false, smoothing: 'smooth', speed: 1, repeat: false, repeatAll: false,
+    person: '', screenEvery: 3000, features: {}, collapsed: {},
     ...loadJson(SETTINGS_KEY, {}),
   };
   if (!SMOOTHING_LABELS[settings.smoothing]) settings.smoothing = 'smooth';
+  if (!PEOPLE.includes(settings.person)) settings.person = '';
+  if (![1000, 3000, 5000, 10000, 30000].includes(settings.screenEvery)) settings.screenEvery = 3000;
   if (!(settings.speed > 0 && settings.speed <= MAX_SPEED)) settings.speed = 1;
   ['features', 'collapsed'].forEach((key) => {
     if (!settings[key] || typeof settings[key] !== 'object') settings[key] = {};
@@ -685,6 +765,12 @@
   const editor = { draft: null, editingId: null, selected: 0, openLink: null, lastLoop: null, preview: null };
   let mainWheel = null;
   let seqWheel = null;
+  // Screen colour sync: the computer sending its screen's colour, and the phone following it.
+  const screenSend = { stream: null, firebase: null, capture: null, canvas: null, worker: null, busy: false, last: null, sentAt: 0, sent: 0 };
+  const screenFollow = {
+    unsubscribe: null, person: '', from: null, target: null, shown: null, startedAt: 0, heardAt: 0, sentAt: 0,
+    brightness: 100, timer: null, last: null,
+  };
 
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1067,6 +1153,7 @@
     if (mode === 'phonemic') stopPhoneMic();
     if (mode === 'devicemic') sendToAll('mic', (p) => p.micOff);
     if (mode === 'show') pausePlayer();
+    if (mode === 'screen') stopScreenFollow(false);
     mode = next;
     queueRender();
   }
@@ -1145,7 +1232,7 @@
 
   // Keeps the screen on while the mic listens or a replay plays: Android pauses hidden pages.
   async function keepAwake() {
-    if (!(mic.users.size || player.playing) || wakeLock || !('wakeLock' in navigator)) return;
+    if (!(mic.users.size || player.playing || screenFollow.unsubscribe) || wakeLock || !('wakeLock' in navigator)) return;
     try {
       wakeLock = await navigator.wakeLock.request('screen');
       wakeLock.addEventListener('release', () => { wakeLock = null; });
@@ -1155,7 +1242,7 @@
   }
 
   function releaseAwake() {
-    if (mic.users.size || player.playing || !wakeLock) return;
+    if (mic.users.size || player.playing || screenFollow.unsubscribe || !wakeLock) return;
     wakeLock.release().catch(() => {});
     wakeLock = null;
   }
@@ -2646,6 +2733,362 @@
     $('#btn-seq-new-2').addEventListener('click', () => openSequenceEditor());
   }
 
+  // ---- Firebase: access key, sign-in and whose lights ----
+
+  // "AIza…---Prabhashwara" → the key, plus the person if the name is one of PEOPLE.
+  function parseAccessKey(raw) {
+    const [apiKey, name = ''] = (raw || '').split('---');
+    const person = PEOPLE.find((p) => p.toLowerCase() === name.trim().toLowerCase()) || null;
+    return { apiKey: apiKey.trim(), person };
+  }
+
+  function storedKey() {
+    try { return localStorage.getItem(KEY_STORAGE); } catch { return null; }
+  }
+
+  let firebaseReady = null;
+
+  // Loads the Firebase SDK, signs in anonymously and resolves to { db, fs } (fs is the Firestore
+  // module). The rules only let signed-in visitors in, and only the access key lets them sign in.
+  function connectFirebase() {
+    firebaseReady = firebaseReady || (async () => {
+      const apiKey = storedKey();
+      if (!apiKey) throw new Error('No access key on this device yet.');
+      const [{ initializeApp }, authLib, fs] = await Promise.all([
+        import(`${FIREBASE_SDK}/firebase-app.js`),
+        import(`${FIREBASE_SDK}/firebase-auth.js`),
+        import(`${FIREBASE_SDK}/firebase-firestore.js`),
+      ]);
+      const app = initializeApp({ ...FIREBASE_CONFIG, apiKey });
+      const auth = authLib.getAuth(app);
+      const db = fs.getFirestore(app);
+      if (EMULATOR) {
+        authLib.connectAuthEmulator(auth, `http://${EMULATOR}:9099`, { disableWarnings: true });
+        fs.connectFirestoreEmulator(db, EMULATOR, 8080);
+      }
+      await new Promise((resolve, reject) => {
+        const stop = authLib.onAuthStateChanged(auth, (user) => {
+          if (!user) {
+            authLib.signInAnonymously(auth).catch(reject);
+            return;
+          }
+          stop();
+          resolve(user);
+        }, reject);
+      });
+      return { db, fs };
+    })().catch((err) => {
+      firebaseReady = null;
+      throw err;
+    });
+    return firebaseReady;
+  }
+
+  function isKeyError(err) {
+    const code = (err && err.code) || '';
+    return code.includes('api-key-not-valid') || code.includes('invalid-api-key');
+  }
+
+  async function unlockFirebase() {
+    const { apiKey, person } = parseAccessKey($('#fb-key').value);
+    if (!apiKey) {
+      setScreenStatus('Paste the access key first.');
+      return;
+    }
+    try { localStorage.setItem(KEY_STORAGE, apiKey); } catch { /* private window: works until it closes */ }
+    if (person) settings.person = person;
+    saveSettings();
+    setScreenStatus('Connecting to Firebase…');
+    try {
+      await connectFirebase();
+      $('#fb-key').value = '';
+      setScreenStatus(`Connected${settings.person ? ` as ${settings.person}` : '. Pick whose lights these are.'}`);
+    } catch (err) {
+      if (isKeyError(err)) {
+        try { localStorage.removeItem(KEY_STORAGE); } catch { /* nothing stored */ }
+        setScreenStatus("That access key didn't work. Check it and try again.");
+      } else {
+        setScreenStatus(`Couldn't connect to Firebase: ${err.code || err.message}`);
+      }
+    }
+    renderFirebaseUi();
+  }
+
+  // The Firebase app was set up with the old key, so start afresh.
+  function forgetKey() {
+    if (!window.confirm('Remove the access key from this device?')) return;
+    try { localStorage.removeItem(KEY_STORAGE); } catch { /* nothing stored */ }
+    location.reload();
+  }
+
+  function renderFirebaseUi() {
+    const unlocked = !!storedKey();
+    $('#fb-locked').hidden = unlocked;
+    $('#fb-unlocked').hidden = !unlocked;
+    $('#fb-person').value = settings.person || '';
+    const ready = unlocked && !!settings.person;
+    $('#btn-screen-follow').disabled = !ready;
+    $('#btn-screen-send').disabled = !ready;
+  }
+
+  function screenDoc({ db, fs }) {
+    return fs.doc(db, 'users', settings.person.toLowerCase(), 'live', 'screen');
+  }
+
+  // ---- Screen colour sync ----
+
+  function setScreenStatus(text) {
+    $('#screen-status').textContent = text;
+  }
+
+  function showScreenSwatch(c) {
+    $('#screen-swatch').style.background = rgbToHex(hsvToRgb(c.h, c.s / 1000, 0.3 + 0.7 * (c.b / 100)));
+  }
+
+  // The colour an ambient light would pick: the strongest vivid hue on screen, ignoring greys and
+  // near-black, plus the screen's overall brightness. Mostly grey or white screens give white.
+  // `data` is RGBA pixels; returns { h: 0-359, s: 0-1000, b: 1-100 }.
+  function screenColour(data) {
+    const weight = new Float32Array(36);
+    const sat = new Float32Array(36);
+    const x = new Float32Array(36);
+    const y = new Float32Array(36);
+    let light = 0;
+    const pixels = data.length / 4;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255;
+      const max = Math.max(r, g, b), delta = max - Math.min(r, g, b);
+      light += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      if (max < 0.12 || delta < 0.08) continue;
+      const { h, s } = rgbToHs([data[i], data[i + 1], data[i + 2]]);
+      // Vivid, bright pixels count most.
+      const w = s * max;
+      const bin = Math.floor(h / 10) % 36;
+      const rad = (h * Math.PI) / 180;
+      weight[bin] += w;
+      sat[bin] += s * w;
+      x[bin] += Math.cos(rad) * w;
+      y[bin] += Math.sin(rad) * w;
+    }
+    const b = Math.round(10 + 90 * Math.sqrt(light / pixels));
+    // The strongest band of hues, counting each 10° bin with its neighbours.
+    let best = 0;
+    let bestWeight = -1;
+    for (let i = 0; i < 36; i++) {
+      const w = weight[(i + 35) % 36] + weight[i] + weight[(i + 1) % 36];
+      if (w > bestWeight) {
+        best = i;
+        bestWeight = w;
+      }
+    }
+    if (bestWeight < pixels * 0.03) return { h: 0, s: 0, b };
+    let sx = 0, sy = 0, ss = 0;
+    for (const i of [(best + 35) % 36, best, (best + 1) % 36]) {
+      sx += x[i];
+      sy += y[i];
+      ss += sat[i];
+    }
+    const h = Math.round(((Math.atan2(sy, sx) * 180) / Math.PI + 360) % 360) % 360;
+    // LEDs look washed out at screen saturation, so push it up a little.
+    return { h, s: Math.min(1000, Math.round((ss / bestWeight) * 1300)), b };
+  }
+
+  function hueGap(a, b) {
+    return Math.abs(((a.h - b.h + 540) % 360) - 180);
+  }
+
+  // A visible change in colour or brightness: sent on the chosen interval.
+  function screenColourMoved(a, b) {
+    return (Math.min(a.s, b.s) > 150 && hueGap(a, b) >= 5) || Math.abs(a.s - b.s) >= 60 || Math.abs(a.b - b.b) >= 4;
+  }
+
+  // A jump, like a cut from ocean to forest: sent straight away.
+  function screenColourJumped(a, b) {
+    return (Math.min(a.s, b.s) > 150 && hueGap(a, b) >= 40) || Math.abs(a.s - b.s) >= 400 || Math.abs(a.b - b.b) >= 25;
+  }
+
+  async function startScreenSend() {
+    if (screenSend.stream) return;
+    let firebase;
+    try {
+      firebase = await connectFirebase();
+    } catch (err) {
+      setScreenStatus(`Couldn't connect to Firebase: ${err.code || err.message}`);
+      return;
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
+    } catch (err) {
+      setScreenStatus(`Screen sharing was cancelled or blocked (${err.name}).`);
+      return;
+    }
+    const [track] = stream.getVideoTracks();
+    // Chrome's own "Stop sharing" button ends the track.
+    track.addEventListener('ended', stopScreenSend);
+    // A worker keeps time, because Chrome slows a hidden tab's own timers right down, and the
+    // movie usually plays in another window.
+    const ticker = new Blob([`setInterval(() => postMessage(0), ${SCREEN_SAMPLE_MS});`], { type: 'text/javascript' });
+    Object.assign(screenSend, {
+      stream, firebase, capture: new ImageCapture(track), canvas: new OffscreenCanvas(64, 36),
+      worker: new Worker(URL.createObjectURL(ticker)), busy: false, last: null, sentAt: 0, sent: 0,
+    });
+    screenSend.worker.onmessage = sampleScreen;
+    const preview = $('#screen-preview');
+    preview.srcObject = stream;
+    preview.hidden = false;
+    preview.play().catch(() => {});
+    $('#btn-screen-send').textContent = '■ Stop sending';
+    setScreenStatus(`Sending to ${settings.person}'s lights…`);
+    log(`Sending this screen's colour to ${settings.person}'s lights.`, 'ok');
+  }
+
+  async function sampleScreen() {
+    if (screenSend.busy || !screenSend.capture) return;
+    screenSend.busy = true;
+    try {
+      const frame = await screenSend.capture.grabFrame();
+      const ctx = screenSend.canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(frame, 0, 0, 64, 36);
+      frame.close();
+      const colour = screenColour(ctx.getImageData(0, 0, 64, 36).data);
+      showScreenSwatch(colour);
+      const now = Date.now();
+      const { last, sentAt } = screenSend;
+      const since = now - sentAt;
+      const due = !last
+        || (since >= SCREEN_MIN_GAP_MS && screenColourJumped(colour, last))
+        || (since >= settings.screenEvery && screenColourMoved(colour, last))
+        || since >= SCREEN_HEARTBEAT_MS;
+      if (due) {
+        const { fs } = screenSend.firebase;
+        await fs.setDoc(screenDoc(screenSend.firebase), { ...colour, t: now });
+        Object.assign(screenSend, { last: colour, sentAt: now, sent: screenSend.sent + 1 });
+      }
+      setScreenStatus(`Sending to ${settings.person}'s lights · ${screenSend.sent.toLocaleString()} updates sent`);
+    } catch (err) {
+      // A frame can be missing while the screen is still; just try again next time.
+      if (err.name !== 'InvalidStateError') setScreenStatus(`Couldn't send: ${err.code || err.message}`);
+    } finally {
+      screenSend.busy = false;
+    }
+  }
+
+  function stopScreenSend() {
+    if (!screenSend.stream) return;
+    screenSend.worker.terminate();
+    screenSend.stream.getTracks().forEach((t) => t.stop());
+    Object.assign(screenSend, { stream: null, capture: null, canvas: null, worker: null });
+    $('#screen-preview').srcObject = null;
+    $('#screen-preview').hidden = true;
+    $('#btn-screen-send').textContent = '🖥 Send this screen';
+    setScreenStatus(`Stopped sending. ${screenSend.sent.toLocaleString()} updates were sent.`);
+    log('Stopped sending the screen colour.');
+  }
+
+  // The phone side: a live Firestore listener on this person's screen colour, fading the lights
+  // to each new colour.
+  async function startScreenFollow() {
+    if (screenFollow.unsubscribe) return;
+    let firebase;
+    try {
+      firebase = await connectFirebase();
+    } catch (err) {
+      setScreenStatus(`Couldn't connect to Firebase: ${err.code || err.message}`);
+      return;
+    }
+    enterMode('screen');
+    markActive(null);
+    const unsubscribe = firebase.fs.onSnapshot(screenDoc(firebase), (snap) => {
+      if (snap.exists()) onScreenColour(snap.data());
+    }, (err) => setScreenStatus(`Firestore stopped the updates: ${err.code || err.message}`));
+    Object.assign(screenFollow, {
+      unsubscribe, person: settings.person, from: null, target: null, shown: null, heardAt: 0, sentAt: 0,
+      brightness: current.b, last: null, timer: setInterval(screenFollowTick, 50),
+    });
+    keepAwake();
+    $('#btn-screen-follow').textContent = '■ Stop following';
+    setScreenStatus(`Waiting for ${settings.person}'s computer…`);
+    log(`Following ${settings.person}'s screen colour.`, 'ok');
+  }
+
+  function onScreenColour(data) {
+    if (![data.h, data.s, data.b, data.t].every(Number.isFinite)) return;
+    screenFollow.sentAt = data.t;
+    // The last colour left behind by a computer that has since stopped isn't worth showing.
+    if (Date.now() - data.t > SCREEN_STALE_MS) return;
+    const b = $('#screen-bright').checked ? Math.min(100, Math.max(1, data.b)) : screenFollow.brightness;
+    const target = { h: data.h % 360, s: Math.min(1000, Math.max(0, data.s)) / 1000, b };
+    screenFollow.from = screenFollow.shown || target;
+    screenFollow.target = target;
+    screenFollow.startedAt = performance.now();
+    screenFollow.heardAt = Date.now();
+  }
+
+  function screenFollowTick() {
+    const f = screenFollow;
+    if (f.target) {
+      const fade = Number($('#screen-fade').value);
+      const e = fade ? Math.min(1, (performance.now() - f.startedAt) / fade) : 1;
+      f.shown = travel(f.from, f.target, EASE.smooth(e), 'short');
+      applyShowState(f.shown, f);
+      showScreenSwatch({ h: f.shown.h, s: f.shown.s * 1000, b: f.shown.b });
+    }
+    const age = Date.now() - f.heardAt;
+    const seconds = (ms) => Math.max(0, Math.round(ms / 1000)).toLocaleString();
+    if (!f.heardAt) {
+      setScreenStatus(`Waiting for ${f.person}'s computer…${f.sentAt ? ` (its last colour was ${seconds(Date.now() - f.sentAt)} s ago)` : ''}`);
+    } else if (age > SCREEN_STALE_MS) {
+      setScreenStatus(`No colour from ${f.person}'s computer for ${seconds(age)} s. Is it still sending?`);
+    } else {
+      setScreenStatus(`Following ${f.person}'s screen · last colour ${(age / 1000).toFixed(1)} s ago`);
+    }
+  }
+
+  // `leaveMode` is false when another mode is taking over.
+  function stopScreenFollow(leaveMode = true) {
+    if (!screenFollow.unsubscribe) return;
+    screenFollow.unsubscribe();
+    clearInterval(screenFollow.timer);
+    Object.assign(screenFollow, { unsubscribe: null, timer: null, target: null });
+    releaseAwake();
+    $('#btn-screen-follow').textContent = '▶ Follow my screen';
+    setScreenStatus('Stopped following.');
+    if (leaveMode && mode === 'screen') {
+      mode = 'colour';
+      queueRender();
+    }
+  }
+
+  function setupScreenSync() {
+    $('#fb-person').innerHTML = '<option value="">Pick a person</option>'
+      + PEOPLE.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+    $('#fb-person').addEventListener('change', (e) => {
+      stopScreenFollow();
+      stopScreenSend();
+      settings.person = e.target.value;
+      saveSettings();
+      renderFirebaseUi();
+    });
+    $('#btn-fb-unlock').addEventListener('click', unlockFirebase);
+    $('#btn-fb-forget').addEventListener('click', forgetKey);
+    $('#screen-every').value = String(settings.screenEvery);
+    $('#screen-every').addEventListener('change', (e) => {
+      settings.screenEvery = Number(e.target.value);
+      saveSettings();
+    });
+    $('#btn-screen-follow').addEventListener('click', () => (screenFollow.unsubscribe ? stopScreenFollow() : startScreenFollow()));
+    $('#btn-screen-send').addEventListener('click', () => (screenSend.stream ? stopScreenSend() : startScreenSend()));
+    $('#screen-fade').addEventListener('input', (e) => {
+      $('#screen-fade-value').textContent = `${(Number(e.target.value) / 1000).toFixed(1)} s`;
+    });
+    // Phones can't share their screen; the computer side is for Chrome or Edge on a computer.
+    const canSend = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia && window.ImageCapture);
+    $('#btn-screen-send').hidden = !canSend;
+    $('#screen-send-options').hidden = !canSend;
+    renderFirebaseUi();
+  }
+
   // ---- Phone microphone ----
   // Opened when a phone-mic pattern starts listening and closed when it stops.
 
@@ -2738,6 +3181,11 @@
     $('#btn-seq-new-2').hidden = !on.sequences;
     $('.create').hidden = !on.record && !on.sequences;
     $('#diagnostics').hidden = !on.diagnostics;
+    $('#sec-screen').hidden = !on.screen;
+    if (!on.screen) {
+      stopScreenFollow();
+      stopScreenSend();
+    }
     if (!on.music && (mode === 'phonemic' || mode === 'devicemic')) stopMusic();
     if (!on.record && recorder.active) {
       stopRecording();
@@ -2942,6 +3390,7 @@
   setupWheel();
   setupShows();
   setupSequenceEditor();
+  setupScreenSync();
   setupSettings();
   setupCollapsibles();
   let savedTab = null;

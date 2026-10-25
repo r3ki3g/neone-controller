@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // One person's live screen colour: written by their computer, read by their phone.
+    // Only signed-in visitors (which needs the access key) get in.
+    match /users/{person}/live/screen {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.data.keys().hasOnly(['h', 's', 'b', 't'])
+        && request.resource.data.h is number
+        && request.resource.data.s is number
+        && request.resource.data.b is number
+        && request.resource.data.t is number;
+    }
+  }
+}
