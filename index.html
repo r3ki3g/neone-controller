@@ -786,7 +786,7 @@
   const PAIRED_KEY = 'led-lights-paired-before';
   // Bumped with every change to this page. Shown under the title, because GitHub Pages takes a
   // few minutes to publish an update.
-  const PAGE_VERSION = '2.2';
+  const PAGE_VERSION = '2.4';
   // Screen colour sync goes through Firestore, so no server of our own. Everything below is an
   // identifier that grants nothing on its own; the apiKey is pasted once on each device and kept in
   // that browser, as in Gym notes. Never run `firebase deploy`: Firebase Hosting would publish the
@@ -4222,7 +4222,7 @@
 
   const usageLog = {
     queue: [], outbox: [], timer: null, waitingSince: 0, sending: false, device: null,
-    wheelFrom: null, batteryWarning: false,
+    wheelFrom: null, batteryWarning: false, awayAt: 0,
     // The connected lights (id → name), when each one dropped, and when the last one went.
     up: new Map(), downAt: new Map(), allDownAt: 0,
   };
@@ -4369,6 +4369,12 @@
     return { colour: $('#color').value, brightness: current.b };
   }
 
+  // The end of a light's id (in the app, its Bluetooth address), which tells two lights with the
+  // same name apart. The app's own readings use the same.
+  function lightIdOf(id) {
+    return String(id).slice(-5);
+  }
+
   // Logs a light dropping or coming back, and all of them going or returning.
   function logLights() {
     const all = lights();
@@ -4382,7 +4388,7 @@
       const d = devices.get(id);
       usageLog.downAt.set(id, now);
       // manual: disconnected or forgotten on purpose, rather than dropped.
-      logEvent('light_down', { light: name, connected: up.size, of, manual: !d || !d.wanted });
+      logEvent('light_down', { light: name, lightId: lightIdOf(id), connected: up.size, of, manual: !d || !d.wanted });
     });
     let cameBack = false;
     up.forEach((d, id) => {
@@ -4390,7 +4396,7 @@
       cameBack = true;
       const downAt = usageLog.downAt.get(id);
       usageLog.downAt.delete(id);
-      logEvent('light_up', { light: nameOf(d), connected: up.size, of, ...(downAt ? { downFor: now - downAt } : {}) });
+      logEvent('light_up', { light: nameOf(d), lightId: lightIdOf(id), connected: up.size, of, ...(downAt ? { downFor: now - downAt } : {}) });
     });
     if (was.size && !up.size && of) {
       usageLog.allDownAt = now;
@@ -4425,6 +4431,22 @@
       renderBatteryWarning();
       if (--left <= 0) clearInterval(timer);
     }, 2000);
+  }
+
+  // Leaving and coming back, as sync events: `background` with why (left_app, screen_off or closing
+  // in the Android app, tab_hidden in a browser), then `foreground` with how long it was away. A
+  // fresh start is `open`.
+  function wentToBackground(reason) {
+    usageLog.awayAt = Date.now();
+    logEvent('background', { reason });
+    flushLog();
+  }
+
+  function cameBack() {
+    const awayFor = usageLog.awayAt ? Date.now() - usageLog.awayAt : undefined;
+    usageLog.awayAt = 0;
+    logEvent('foreground', awayFor !== undefined ? { awayFor } : {});
+    renderBatteryWarning();
   }
 
   function setupUsageLog() {
@@ -4473,10 +4495,22 @@
       setInterval(renderBatteryWarning, 30000);
     }
     window.addEventListener('pagehide', saveLog);
-    // Sent when the page goes to the background; on coming back, the battery setting may have changed.
+    // A browser says when the tab is hidden or shown. In the Android app the page always counts as
+    // shown, so the app says instead (app v1.5 and later).
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') flushLog();
-      else renderBatteryWarning();
+      if (document.visibilityState === 'hidden') wentToBackground('tab_hidden');
+      else cameBack();
+    });
+    // The app's own readings (app v1.6 and later): the phone's position with the lights' signal
+    // (`tilt`), the lights' signal alone (`signal`) and nearby Bluetooth devices (`ble_scan`).
+    window.addEventListener('androidsyncevent', (e) => {
+      const { type, ...details } = e.detail || {};
+      if (['tilt', 'signal', 'ble_scan'].includes(type)) logEvent(type, details);
+    });
+    window.addEventListener('androidappstate', (e) => {
+      const { state, reason } = e.detail || {};
+      if (state === 'background') wentToBackground(reason || 'left_app');
+      else if (state === 'foreground') cameBack();
     });
     logEvent('open');
     sendLog();

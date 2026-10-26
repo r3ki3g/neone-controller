@@ -226,13 +226,18 @@ Every event has `type` and `at` (when, in ms).
 
 | `type` | When | Extra fields |
 |---|---|---|
-| `open` | The page opened | none |
+| `open` | A fresh start: the app launched from closed, or the website page loaded | none |
+| `background` | The app went to the background, or the browser tab was hidden | `reason`: `left_app` (home or another app), `screen_off`, `closing`, or `tab_hidden` in a browser |
+| `foreground` | Came back to the app (or tab) while it was still running | `awayFor` (ms): how long it was in the background |
 | `tap` | A person tapped a button, tab or section header | `control`, `label`, `mode` |
 | `set` | A person changed a slider, colour, tick box or list. Logged once, when the finger lifts | `control`, `label`, `value`, `mode`. The colour wheel adds `from`, and `brightness` and `brightnessFrom` if the ring moved |
-| `light_down` | A light stopped being connected | `light`, `connected`, `of`, `manual` |
-| `light_up` | A light connected | `light`, `connected`, `of`, and `downFor` (ms) if it had dropped since the page opened |
+| `light_down` | A light stopped being connected | `light`, `lightId`, `connected`, `of`, `manual` |
+| `light_up` | A light connected | `light`, `lightId`, `connected`, `of`, and `downFor` (ms) if it had dropped since the page opened |
 | `all_down` | The last connected light went | `of`, `manual` |
 | `all_up` | Every light is connected | `of`, and `downFor` (ms) if they had all been down |
+| `tilt` | Android app v1.6+: the phone turned more than 10° since the last one (at most once a minute) | `face` (`face_up`, `upright`, `face_down`, `upside_down`, `left_side`, `right_side`), `pitch`, `roll`, `heading` (degrees, `heading` 0 = north), `q` (the 3D rotation as 4 numbers), `path` (that minute's readings, `{at, q}` every 5 s while it moved), `signal` |
+| `signal` | Android app v1.6+: only the lights' signal changed (by 5 dBm or more) in a minute | `signal`: `[{ light, id, rssi }]`, `rssi` in dBm (closer to 0 is stronger) |
+| `ble_scan` | Android app v1.6+: a 10-second scan for nearby Bluetooth devices, every 5 minutes and after a light drops (screen on only) | `seconds`, `reason` (`timer` or `light_drop`), `devices`: up to 100 of `{ address, name, rssi, maker, makerId, kind, rotating, connectable, yours }` |
 | `battery_warning` | Android app only: the red "Battery saving is holding the app back" warning appeared (`shown: true`) or went away once battery was set to Unrestricted (`shown: false`) | `shown` |
 
 What the fields mean:
@@ -243,6 +248,7 @@ What the fields mean:
 - **`mode`:** what the lights were doing at the time, like `colour`, `scene` or `screen`.
 - **`connected` / `of`:** how many lights are connected, out of how many added.
 - **`manual: true`:** someone pressed Disconnect or Forget. `false` means it really dropped.
+- **`lightId`:** the end of the light's id (its Bluetooth address in the app), so two lights with the same name, like the two `GATT--DEMO`, can be told apart.
 
 ### Example batch
 
