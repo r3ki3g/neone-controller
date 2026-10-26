@@ -31,6 +31,7 @@ Chrome pauses a page a few seconds after you switch to another app, which freeze
 - A foreground service, with the notification "Keeping your lights connected", stops Android pausing the app. While a replay or the phone mic runs, it also keeps the CPU awake.
 - The page is always told it's visible, so its timers run at full speed in the background.
 - It needs internet to start; without it, a "No internet" screen offers Try again.
+- For the usage log (app v1.2 and later): it tells the page the phone's maker, model and name, and, once Usage access is allowed for My LED Lights in Android's settings, which apps were on screen and when. Android never shows an app what runs in the background.
 
 `index.html` is the single source of truth: website changes reach the app on its next launch. Only changes to the native code need a new APK. The page shows "Website v…" under the title (and "App v…" inside the app); bump `PAGE_VERSION` in `index.html` with each change, and `versionName` in `android/app/build.gradle.kts` with each app change.
 
@@ -42,7 +43,7 @@ cd android
 # Writes MyLEDLights_v<version>.apk next to index.html, replacing the previous one.
 ```
 
-Install it with `adb install -r MyLEDLights_v1.1.apk` (USB debugging on), or copy the file to the phone and open it. The app is signed with this Mac's debug key, so updates must be built on the same Mac; otherwise uninstall first, which deletes the app's saved replays. The app keeps its own remembered lights and replays, separate from Chrome: add the lights once, and move replays with Export and Import.
+Install it with `adb install -r MyLEDLights_v1.2.apk` (USB debugging on), or copy the file to the phone and open it. The app is signed with this Mac's debug key, so updates must be built on the same Mac; otherwise uninstall first, which deletes the app's saved replays. The app keeps its own remembered lights and replays, separate from Chrome: add the lights once, and move replays with Export and Import.
 
 Limit: "This phone's mic" music patterns only listen while the app is open, because Android doesn't let a background app use the mic without a separate permission type.
 
@@ -57,7 +58,7 @@ The lights follow the main colour on a computer screen, like an ambient TV light
 It runs through Firestore in the `neon-controller` Firebase project, with no server of our own:
 
 - **Access key:** the Firebase `apiKey` is not in this repo. Paste it once on each device in the Screen colour sync section, as `AIza…---YourName`. The name picks whose lights these are (Prabhashwara, Chamuth or Test), and each person's computer reaches only their own phone. The other config values in `index.html` are identifiers that grant nothing on their own.
-- **Sign-in:** anonymous Firebase sign-in. `firebase/firestore.rules` lets signed-in visitors read and write only `users/<name>/live/screen`, only as `{ h, s, b, t }`, and `users/<name>/config/screen`, only as `{ active, presets (up to 20), t }`. The page checks every preset it reads back.
+- **Sign-in:** anonymous Firebase sign-in. `firebase/firestore.rules` lets signed-in visitors read and write only `users/<name>/live/screen`, only as `{ h, s, b, t }`, `users/<name>/config/screen`, only as `{ active, presets (up to 20), t }`, and new documents under `users/<name>/mobile_and_desktop_sync_events`, only as `{ device, from, to, events (up to 50) }`, which can't be changed afterwards. The page checks every preset it reads back.
 - **Never run `firebase deploy`:** Firebase Hosting would publish the whole config, key included.
 
 Firebase console setup, done once:
@@ -84,6 +85,7 @@ Limits: copy-protected video (Netflix, Disney+) is captured as black. On a Mac, 
 - **Music:**
   - *Lights' own mics:* each controller listens with its own mic. LotusLamp X uses the chosen pattern (Energy, Rhythm, Spectrum, Scroll 1/2); MR Star uses its built-in music mode. One sensitivity slider covers both.
   - *This phone's mic:* the page listens and sends the same colour and brightness to every light about 20 times a second, so all lights stay in sync. Patterns: Pulse, Beat colours, Spectrum. The page keeps the screen on while listening.
+- **Usage log for the pilot** (Settings, on by default): what people tap and change by hand, lights dropping and coming back, and the device's browser and model, sent to Firestore at `users/<name>/mobile_and_desktop_sync_events` in batches: 10 seconds after activity stops, and at most a minute after the first event. Real taps are told apart from replays, screen sync and the page's own code by the browser's `isTrusted` flag. The access key and typed text are never logged. In the Android app it can also log which apps were on screen. What's stored and how: [firebase-gorilla-guide.md](firebase-gorilla-guide.md).
 - **Diagnostics:** environment checks, "Pick any device", passive scan, service listing, a log, and a command tester for sending one scene number or raw bytes to a single light.
 
 ## Protocols
