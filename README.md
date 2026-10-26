@@ -31,8 +31,8 @@ Chrome pauses a page a few seconds after you switch to another app, which freeze
 - A foreground service, with the notification "Keeping your lights connected", stops Android pausing the app. While a replay or the phone mic runs, it also keeps the CPU awake.
 - The page is always told it's visible, so its timers run at full speed in the background.
 - It needs internet to start; without it, a "No internet" screen offers Try again.
-- For the usage log (app v1.2 and later): it tells the page the phone's maker, model and name. It doesn't look at other apps.
-- On every launch until it's set (app v1.4 and later), it asks to set its battery use to Unrestricted, because Android otherwise holds its internet in the background: following a screen's colour stops and sync events wait until the app is opened again. Until then a warning with a button stays at the top of the page, and Settings → Advanced shows it too.
+- For sync events (app v1.2 and later): it tells the page the phone's maker, model and name. It doesn't look at other apps.
+- On every launch until it's set (app v1.4 and later), it asks to set its battery use to Unrestricted, because Android otherwise holds its internet in the background: following a screen's colour stops and sync events wait until the app is opened again. Until then a red warning with a button stays at the top of the page, and its appearing and going away are sync events, so a computer can show it too.
 
 `index.html` is the single source of truth: website changes reach the app on its next launch. Only changes to the native code need a new APK. The page shows "Website v…" under the title (and "App v…" inside the app); bump `PAGE_VERSION` in `index.html` with each change, and `versionName` in `android/app/build.gradle.kts` with each app change.
 
@@ -86,7 +86,7 @@ Limits: copy-protected video (Netflix, Disney+) is captured as black. On a Mac, 
 - **Music:**
   - *Lights' own mics:* each controller listens with its own mic. LotusLamp X uses the chosen pattern (Energy, Rhythm, Spectrum, Scroll 1/2); MR Star uses its built-in music mode. One sensitivity slider covers both.
   - *This phone's mic:* the page listens and sends the same colour and brightness to every light about 20 times a second, so all lights stay in sync. Patterns: Pulse, Beat colours, Spectrum. The page keeps the screen on while listening.
-- **Usage log for the pilot** (Settings, on by default): what people tap and change by hand, lights dropping and coming back, and the device's browser and model, sent to Firestore at `users/<name>/mobile_and_desktop_sync_events` in batches: 10 seconds after activity stops, and at most a minute after the first event. Real taps are told apart from replays, screen sync and the page's own code by the browser's `isTrusted` flag. The access key and typed text are never logged. What's stored and how: [firebase-gorilla-guide.md](firebase-gorilla-guide.md).
+- **Sync events** (always on, with no switch in Settings): what people tap and change by hand, lights dropping and coming back, and the device's browser and model, sent to Firestore at `users/<name>/mobile_and_desktop_sync_events` in batches: 10 seconds after activity stops, and at most a minute after the first event. Real taps are told apart from replays, screen sync and the page's own code by the browser's `isTrusted` flag. The access key and typed text are never logged. What's stored and how: [firebase-gorilla-guide.md](firebase-gorilla-guide.md).
 - **Diagnostics:** environment checks, "Pick any device", passive scan, service listing, a log, and a command tester for sending one scene number or raw bytes to a single light.
 
 ## Protocols

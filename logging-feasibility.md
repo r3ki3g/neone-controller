@@ -1,6 +1,6 @@
 # Logging for the pilot: what can we know?
 
-> **Built** in website v1.8 and Android app v1.2 (10/26/26), as Settings → Advanced → **Usage log for the pilot**. What's stored, field by field: [firebase-gorilla-guide.md](firebase-gorilla-guide.md), section 6.
+> **Built** in website v1.8 and Android app v1.2 (10/26/26), as **sync events**, always on since website v2.2 (no Settings switch). What's stored, field by field: [firebase-gorilla-guide.md](firebase-gorilla-guide.md), section 6.
 
 | Question | Possible? |
 |---|---|

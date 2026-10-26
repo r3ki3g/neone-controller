@@ -21,6 +21,9 @@
               border-radius: 12px; padding: 16px; margin-bottom: 16px; }
     section.banner { border-color: var(--warn); }
     section.banner h2 { color: var(--warn); }
+    section.banner.danger { border-color: var(--err); background: #2a1519; }
+    section.banner.danger h2 { color: var(--err); }
+    section.banner.danger button { background: var(--err); color: #fff; }
     .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     button { font: inherit; border: 0; border-radius: 8px; padding: 10px 14px;
              background: var(--accent); color: #fff; cursor: pointer; }
@@ -185,9 +188,6 @@
     .feature .needs { display: block; margin-top: 2px; font-size: .78rem; color: var(--muted); }
     .feature.blocked { opacity: .5; }
     .feature.blocked .needs { color: var(--warn); }
-    .feature-panel { margin: -4px 0 10px 32px; }
-    .feature-panel p { margin: 0 0 6px; }
-    .feature-panel .row { align-items: center; gap: 8px; }
     pre#log { margin: 0; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
               font: 12px/1.5 ui-monospace, Menlo, monospace; color: var(--muted); }
     pre#log .ok { color: var(--ok); } pre#log .warn { color: var(--warn); } pre#log .err { color: var(--err); }
@@ -209,7 +209,7 @@
 
   <div id="view-main">
 
-  <section id="battery-banner" class="banner" hidden>
+  <section id="battery-banner" class="banner danger" hidden>
     <h2>Battery saving is holding the app back</h2>
     <p>While My LED Lights is in the background, Android pauses its internet: following a screen's colour stops,
       and sync events wait until you open the app again. Set its battery use to Unrestricted to fix this.</p>
@@ -721,14 +721,6 @@
       <p class="hint">Everything is on by default. Turn off what you don't use for a simpler app.
         A feature that needs another one is greyed out while that one is off.</p>
       <div id="feature-list"></div>
-      <!-- Moved under the usage log feature by setupUsageLog(). -->
-      <div id="log-panel" class="feature-panel" hidden>
-        <p id="log-status" class="hint"></p>
-        <div id="battery-access" class="row" hidden>
-          <span id="battery-access-status" class="hint"></span>
-          <button id="btn-battery-access" class="secondary">Set to Unrestricted</button>
-        </div>
-      </div>
     </section>
   </div>
 
@@ -794,7 +786,7 @@
   const PAIRED_KEY = 'led-lights-paired-before';
   // Bumped with every change to this page. Shown under the title, because GitHub Pages takes a
   // few minutes to publish an update.
-  const PAGE_VERSION = '2.1';
+  const PAGE_VERSION = '2.2';
   // Screen colour sync goes through Firestore, so no server of our own. Everything below is an
   // identifier that grants nothing on its own; the apiKey is pasted once on each device and kept in
   // that browser, as in Gym notes. Never run `firebase deploy`: Firebase Hosting would publish the
@@ -855,7 +847,7 @@
   const TABS = ['colour', 'scenes', 'music', 'shows'];
   const SETTINGS_KEY = 'led-lights-settings';
   const SHOWS_KEY = 'led-lights-shows';
-  // The pilot's usage log (a Settings feature): events go to Firestore at
+  // Sync events (always on): events go to Firestore at
   // users/<name>/mobile_and_desktop_sync_events/<id>
   // once things go quiet for LOG_QUIET_MS, so a burst of taps is one batch, but never later than
   // LOG_WAIT_MS after the first of them, or straight away at LOG_BATCH events.
@@ -910,7 +902,6 @@
     { key: 'record', group: 'Replays', name: 'Record colour changes', desc: 'Adds the ● Record colour changes button to the Colour tab.', needs: ['replays'] },
     { key: 'sequences', group: 'Replays', name: 'Colour sequences', desc: 'Build a replay from colours you pick, with timed, curved changes between them.', needs: ['replays'] },
     { key: 'diagnostics', group: 'Advanced', name: 'Diagnostics', desc: 'Shows the scanner, command tester and log at the bottom of the page.' },
-    { key: 'usageLog', group: 'Advanced', name: 'Usage log for the pilot', desc: "Sends Firebase what you tap and change by hand (never the access key or text you type), when lights drop and come back, and this device's browser and model." },
   ];
   const FEATURE_MAP = Object.fromEntries(FEATURES.map((f) => [f.key, f]));
 
@@ -4224,19 +4215,19 @@
     Object.assign(mic, { ctx: null, stream: null, analyser: null, bins: null });
   }
 
-  // ---- Usage log for the pilot ----
-  // What people tap and change by hand, and lights dropping and coming back. Only real taps count
-  // (isTrusted), so replays, screen sync and the page's own code never show up as someone's doing. See firebase-gorilla-guide.md.
+  // ---- Mobile and desktop sync events ----
+  // Always on: what people tap and change by hand, lights dropping and coming back, and the battery
+  // warning. Only real taps count (isTrusted), so replays, screen sync and the page's own code never
+  // show up as someone's doing. See firebase-gorilla-guide.md.
 
   const usageLog = {
-    queue: [], outbox: [], timer: null, waitingSince: 0, sending: false, sent: 0, error: '', device: null,
-    wheelFrom: null,
+    queue: [], outbox: [], timer: null, waitingSince: 0, sending: false, device: null,
+    wheelFrom: null, batteryWarning: false,
     // The connected lights (id → name), when each one dropped, and when the last one went.
     up: new Map(), downAt: new Map(), allDownAt: 0,
   };
 
   function logEvent(type, details = {}) {
-    if (!featureOn('usageLog')) return;
     const { queue } = usageLog;
     queue.push({ type, at: Date.now(), ...details });
     if (queue.length > LOG_KEEP) queue.splice(0, queue.length - LOG_KEEP);
@@ -4247,7 +4238,6 @@
       clearTimeout(usageLog.timer);
       usageLog.timer = setTimeout(flushLog, Math.max(0, Math.min(LOG_QUIET_MS, usageLog.waitingSince + LOG_WAIT_MS - Date.now())));
     }
-    renderLogStatus();
   }
 
   // Packs the waiting events into batches for the person picked now, and sends them. Without a
@@ -4272,7 +4262,6 @@
       saveLog();
     }
     sendLog();
-    renderLogStatus();
   }
 
   async function sendLog() {
@@ -4290,16 +4279,12 @@
           if (err.code !== 'permission-denied' || !(await fs.getDoc(ref)).exists()) throw err;
         }
         if (usageLog.outbox[0] === batch) usageLog.outbox.shift();
-        usageLog.sent += batch.data.events.length;
-        usageLog.error = '';
         saveLog();
       }
-    } catch (err) {
-      // Tried again with the next batch.
-      usageLog.error = err.code || err.message;
+    } catch {
+      // Offline, out of quota or no key yet: tried again with the next batch.
     } finally {
       usageLog.sending = false;
-      renderLogStatus();
     }
   }
 
@@ -4308,13 +4293,6 @@
     try {
       localStorage.setItem(LOG_KEY, JSON.stringify({ queue: usageLog.queue, outbox: usageLog.outbox }));
     } catch { /* lost if the page closes before they're sent */ }
-  }
-
-  function clearLog() {
-    if (!usageLog.queue.length && !usageLog.outbox.length) return;
-    clearTimeout(usageLog.timer);
-    Object.assign(usageLog, { timer: null, queue: [], outbox: [] });
-    saveLog();
   }
 
   // This device, sent with each batch: a random id kept in this browser, the browser and system,
@@ -4393,7 +4371,6 @@
 
   // Logs a light dropping or coming back, and all of them going or returning.
   function logLights() {
-    if (!featureOn('usageLog')) return;
     const all = lights();
     const up = new Map(all.filter((d) => d.status === 'connected').map((d) => [d.device.id, d]));
     const was = usageLog.up;
@@ -4426,50 +4403,31 @@
     usageLog.up = new Map([...up].map(([id, d]) => [id, nameOf(d)]));
   }
 
-  function renderLogPanel() {
-    renderLogStatus();
-    renderAppAccess();
-  }
-
-  function renderLogStatus() {
-    if ($('#view-settings').hidden || $('#log-panel').hidden) return;
-    const waiting = usageLog.queue.length + usageLog.outbox.reduce((n, b) => n + b.data.events.length, 0);
-    let note = '';
-    if (!storedKey() || !settings.person) note = ' They go once the access key is in and a person is picked, under Screen colour sync.';
-    else if (usageLog.error === 'permission-denied') note = ' Firebase refused them: publish the latest firestore.rules in the Firebase console.';
-    else if (usageLog.error) note = ` The last try failed (${usageLog.error}); it's tried again with the next batch.`;
-    $('#log-status').textContent = `${usageLog.sent.toLocaleString()} ${usageLog.sent === 1 ? 'event' : 'events'} sent since this page opened, `
-      + `${waiting.toLocaleString()} waiting.${note}`;
-  }
-
-  // Only in the Android app: whether screen colours and events can come and go while it's in the
-  // background. Until they can, a banner at the top of the page asks for it.
-  async function renderAppAccess() {
-    const inApp = !!window.AndroidBle;
+  // Only in the Android app (v1.3 and later): while battery saving holds the app's internet in the
+  // background, a red warning at the top asks for Unrestricted. It appearing and going away are
+  // sync events, so a computer can show it too.
+  async function renderBatteryWarning() {
     const app = window.androidApp;
-    const hasBattery = !!app && typeof app.batteryUnrestricted === 'function';
+    if (!app || typeof app.batteryUnrestricted !== 'function') return;
     let unrestricted = false;
-    try { unrestricted = hasBattery && await app.batteryUnrestricted(); } catch { /* treated as restricted */ }
-    $('#battery-banner').hidden = !hasBattery || unrestricted;
-    $('#battery-access').hidden = !inApp;
-    $('#battery-access-status').textContent = !hasBattery ? 'Install the app v1.3 or later to send events while the app is in the background.'
-      : unrestricted ? 'Background: battery is Unrestricted, so events go out straight away.'
-        : 'Background: battery saving holds events until you open the app again.';
-    $('#btn-battery-access').hidden = !hasBattery || unrestricted;
+    try { unrestricted = await app.batteryUnrestricted(); } catch { /* treated as restricted */ }
+    const shown = !unrestricted;
+    $('#battery-banner').hidden = !shown;
+    if (shown !== usageLog.batteryWarning) logEvent('battery_warning', { shown });
+    usageLog.batteryWarning = shown;
   }
 
   // The app tells the page it's always on screen, so nothing says when the person comes back from
   // Android's settings: check again every 2 s for half a minute.
-  function recheckAppAccess() {
+  function recheckBattery() {
     let left = 15;
     const timer = setInterval(() => {
-      renderAppAccess();
+      renderBatteryWarning();
       if (--left <= 0) clearInterval(timer);
     }, 2000);
   }
 
   function setupUsageLog() {
-    $(`[data-feature="usageLog"]`).closest('.feature').after($('#log-panel'));
     const saved = loadJson(LOG_KEY, {});
     if (Array.isArray(saved.queue)) usageLog.queue = saved.queue.slice(-LOG_KEEP);
     if (Array.isArray(saved.outbox)) usageLog.outbox = saved.outbox.slice(-LOG_KEEP / LOG_BATCH);
@@ -4505,20 +4463,20 @@
     };
     wheel.addEventListener('pointerup', wheelDone, true);
     wheel.addEventListener('pointercancel', wheelDone, true);
-    ['#btn-battery-access', '#btn-battery-banner'].forEach((sel) => $(sel).addEventListener('click', () => {
+    $('#btn-battery-banner').addEventListener('click', () => {
       window.androidApp.askBatteryUnrestricted().catch(() => {});
-      recheckAppAccess();
-    }));
+      recheckBattery();
+    });
     // Changed in Android's settings at any time, so checked now and every half minute.
     if (window.androidApp && typeof window.androidApp.batteryUnrestricted === 'function') {
-      renderAppAccess();
-      setInterval(renderAppAccess, 30000);
+      renderBatteryWarning();
+      setInterval(renderBatteryWarning, 30000);
     }
     window.addEventListener('pagehide', saveLog);
     // Sent when the page goes to the background; on coming back, the battery setting may have changed.
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') flushLog();
-      else renderAppAccess();
+      else renderBatteryWarning();
     });
     logEvent('open');
     sendLog();
@@ -4567,8 +4525,6 @@
     $('#btn-seq-new-2').hidden = !on.sequences;
     $('.create').hidden = !on.record && !on.sequences;
     $('#diagnostics').hidden = !on.diagnostics;
-    $('#log-panel').hidden = !on.usageLog;
-    if (!on.usageLog) clearLog();
     $('#sec-screen').hidden = !on.screen;
     layoutTune();
     if (!on.screen) {
@@ -4624,8 +4580,7 @@
     $('#view-settings').hidden = view !== 'settings';
     $('#view-sequence').hidden = view !== 'sequence';
     if (view === 'sequence') renderSequenceEditor();
-    else if (view === 'settings') renderLogPanel();
-    else requestAnimationFrame(drawAllRibbons);
+    else if (view !== 'settings') requestAnimationFrame(drawAllRibbons);
   }
 
   function setupSettings() {

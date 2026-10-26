@@ -191,7 +191,7 @@ In this example, Cyan is set to 0 (`boost[6]`), so cyan is ignored. If there's n
 - **Straight away at 50 events.**
 - **When the page goes to the background** (another tab, or the phone's home screen).
 - **Idle devices send nothing.** No events means no batch.
-- **Android app: battery must be Unrestricted.** Otherwise Android holds the app's internet while it's in the background: events are still noted at the right time, but they only reach Firebase when the app is opened again. App v1.4 asks on every launch until it's set, and the page shows a warning at the top until then.
+- **Android app: battery must be Unrestricted.** Otherwise Android holds the app's internet while it's in the background: events are still noted at the right time, but they only reach Firebase when the app is opened again. App v1.4 asks on every launch until it's set, and the page shows a red warning at the top until then (logged as `battery_warning`).
 
 The batch goes to the person picked on that device, under Screen colour sync. Until a key and a person are set, events wait on the device.
 
@@ -233,6 +233,7 @@ Every event has `type` and `at` (when, in ms).
 | `light_up` | A light connected | `light`, `connected`, `of`, and `downFor` (ms) if it had dropped since the page opened |
 | `all_down` | The last connected light went | `of`, `manual` |
 | `all_up` | Every light is connected | `of`, and `downFor` (ms) if they had all been down |
+| `battery_warning` | Android app only: the red "Battery saving is holding the app back" warning appeared (`shown: true`) or went away once battery was set to Unrestricted (`shown: false`) | `shown` |
 
 What the fields mean:
 
@@ -269,11 +270,10 @@ The browser marks every event caused by a real finger or mouse as **trusted** (`
 
 - **Waiting events are kept in the browser** (`led-lights-log`), so a reload or the app closing doesn't lose them. Up to 1,000 are kept.
 - **A batch can only be created, never changed** (the rules say so). If a batch is sent twice, for example because the page closed mid-send, the second try is refused. The page then sees the batch already exists and drops its copy.
-- **Settings shows how it's going** under **Usage log for the pilot**, for example "26 events sent since this page opened, 0 waiting." If Firebase refuses the batches, it says to publish the latest rules.
 
-### Turning it off
+### Always on
 
-Settings → Advanced → **Usage log for the pilot**. Off means nothing is logged, and anything waiting on that device is deleted.
+There's no switch for it, and Settings doesn't mention it: every device sends sync events, because the mobile and desktop sync depends on them.
 
 ---
 
@@ -436,8 +436,8 @@ Each of these lives in the browser's localStorage, on that device only:
 | `led-lights-settings` | Your settings: whose lights, send intervals, scan rate, feature switches and so on |
 | `led-lights-tune` | A local copy of the presets, for a fast start |
 | `led-lights-writes` | How many writes this computer made today, for the counter in the "Sent to Firebase" step |
-| `led-lights-log` | Usage log events not sent yet |
-| `led-lights-device` | This device's random id for the usage log |
+| `led-lights-log` | Sync events not sent yet |
+| `led-lights-device` | This device's random id for sync events |
 
 The Bluetooth lights themselves, the paired strips and the shows never touch Firebase either.
 
@@ -504,10 +504,11 @@ Everything is in [index.html](index.html). Search for these names:
 | `tuneDoc()` | Builds the path `users/<name>/config/screen` |
 | `watchTune()`, `applyTuneData()`, `cleanPreset()` | Listen for presets, then check and apply them |
 | `saveTune()`, `writeTune()` | The 1-second wait, then `setDoc` |
-| `logEvent()` | Notes one usage log event |
+| `logEvent()` | Notes one sync event |
 | `flushLog()`, `sendLog()` | Pack waiting events into batches, then write each as a new document |
 | `logLights()` | Spots lights dropping and coming back (called on every render request) |
-| `setupUsageLog()` | The tap and change listeners (trusted only) and the colour wheel |
+| `setupUsageLog()` | The tap and change listeners (trusted only), the colour wheel and the battery warning |
+| `renderBatteryWarning()` | Android app: shows or hides the red battery warning, and logs `battery_warning` when it changes |
 | `logDevice()`, `detailLogDevice()` | The `device` map |
 
 Related reading:
