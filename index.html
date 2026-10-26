@@ -209,6 +209,13 @@
 
   <div id="view-main">
 
+  <section id="battery-banner" class="banner" hidden>
+    <h2>Battery saving is holding the app back</h2>
+    <p>While My LED Lights is in the background, Android pauses its internet: following a screen's colour stops,
+      and sync events wait until you open the app again. Set its battery use to Unrestricted to fix this.</p>
+    <button id="btn-battery-banner">Set to Unrestricted</button>
+  </section>
+
   <section id="setup-banner" class="banner" hidden>
     <h2>One-time setup to auto-connect</h2>
     <p id="setup-reason">This Chrome can't remember lights between visits yet, so you'd have to add them again after every refresh.</p>
@@ -717,9 +724,9 @@
       <!-- Moved under the usage log feature by setupUsageLog(). -->
       <div id="log-panel" class="feature-panel" hidden>
         <p id="log-status" class="hint"></p>
-        <div id="usage-access" class="row" hidden>
-          <span id="usage-access-status" class="hint"></span>
-          <button id="btn-usage-access" class="secondary">Allow usage access</button>
+        <div id="battery-access" class="row" hidden>
+          <span id="battery-access-status" class="hint"></span>
+          <button id="btn-battery-access" class="secondary">Set to Unrestricted</button>
         </div>
       </div>
     </section>
@@ -787,7 +794,7 @@
   const PAIRED_KEY = 'led-lights-paired-before';
   // Bumped with every change to this page. Shown under the title, because GitHub Pages takes a
   // few minutes to publish an update.
-  const PAGE_VERSION = '1.9';
+  const PAGE_VERSION = '2.1';
   // Screen colour sync goes through Firestore, so no server of our own. Everything below is an
   // identifier that grants nothing on its own; the apiKey is pasted once on each device and kept in
   // that browser, as in Gym notes. Never run `firebase deploy`: Firebase Hosting would publish the
@@ -859,8 +866,6 @@
   const LOG_WAIT_MS = 60000;
   // Unsent events kept at most, for example while offline or before a person is picked.
   const LOG_KEEP = 1000;
-  // In the Android app, which apps were on screen is checked this often.
-  const APP_USAGE_EVERY_MS = 5 * 60000;
   // One-off commands are written with a delivery confirmation; slider and music streams aren't,
   // so they never wait. Without it, a light can silently drop a command sent amid a burst of others.
   const CONFIRMED_KINDS = new Set(['power', 'mode', 'mic']);
@@ -905,7 +910,7 @@
     { key: 'record', group: 'Replays', name: 'Record colour changes', desc: 'Adds the ● Record colour changes button to the Colour tab.', needs: ['replays'] },
     { key: 'sequences', group: 'Replays', name: 'Colour sequences', desc: 'Build a replay from colours you pick, with timed, curved changes between them.', needs: ['replays'] },
     { key: 'diagnostics', group: 'Advanced', name: 'Diagnostics', desc: 'Shows the scanner, command tester and log at the bottom of the page.' },
-    { key: 'usageLog', group: 'Advanced', name: 'Usage log for the pilot', desc: "Sends Firebase what you tap and change by hand (never the access key or text you type), when lights drop and come back, and this device's browser and model. In the Android app, also which apps were on screen, if you allow Usage access." },
+    { key: 'usageLog', group: 'Advanced', name: 'Usage log for the pilot', desc: "Sends Firebase what you tap and change by hand (never the access key or text you type), when lights drop and come back, and this device's browser and model." },
   ];
   const FEATURE_MAP = Object.fromEntries(FEATURES.map((f) => [f.key, f]));
 
@@ -4220,13 +4225,12 @@
   }
 
   // ---- Usage log for the pilot ----
-  // What people tap and change by hand, lights dropping and coming back, and in the Android app
-  // which apps were on screen. Only real taps count (isTrusted), so replays, screen sync and the
-  // page's own code never show up as someone's doing. See firebase-gorilla-guide.md.
+  // What people tap and change by hand, and lights dropping and coming back. Only real taps count
+  // (isTrusted), so replays, screen sync and the page's own code never show up as someone's doing. See firebase-gorilla-guide.md.
 
   const usageLog = {
     queue: [], outbox: [], timer: null, waitingSince: 0, sending: false, sent: 0, error: '', device: null,
-    appsSince: Date.now(), wheelFrom: null,
+    wheelFrom: null,
     // The connected lights (id → name), when each one dropped, and when the last one went.
     up: new Map(), downAt: new Map(), allDownAt: 0,
   };
@@ -4422,22 +4426,9 @@
     usageLog.up = new Map([...up].map(([id, d]) => [id, nameOf(d)]));
   }
 
-  // Each visit to another app, once it ends, timed by when it ended.
-  async function logAppUsage() {
-    const app = window.androidApp;
-    if (!app || !featureOn('usageLog')) return;
-    try {
-      if (!(await app.usageAccess())) return;
-      const until = Date.now();
-      const visits = await app.appUsage(usageLog.appsSince, until);
-      usageLog.appsSince = until;
-      visits.forEach((v) => logEvent('app_used', { at: v.to, app: v.app, package: v.package, from: v.from }));
-    } catch { /* tried again next time */ }
-  }
-
   function renderLogPanel() {
     renderLogStatus();
-    renderUsageAccess();
+    renderAppAccess();
   }
 
   function renderLogStatus() {
@@ -4451,18 +4442,30 @@
       + `${waiting.toLocaleString()} waiting.${note}`;
   }
 
-  // Only in the Android app: whether it may see which apps are on screen.
-  async function renderUsageAccess() {
+  // Only in the Android app: whether screen colours and events can come and go while it's in the
+  // background. Until they can, a banner at the top of the page asks for it.
+  async function renderAppAccess() {
     const inApp = !!window.AndroidBle;
-    $('#usage-access').hidden = !inApp;
-    if (!inApp || $('#view-settings').hidden) return;
     const app = window.androidApp;
-    let allowed = false;
-    try { allowed = !!app && await app.usageAccess(); } catch { /* treated as not allowed */ }
-    $('#usage-access-status').textContent = !app ? 'Install the app v1.2 or later to log which apps are on screen.'
-      : allowed ? 'Apps on screen: allowed, checked every 5 minutes.'
-        : 'Apps on screen: not logged until you allow Usage access for My LED Lights.';
-    $('#btn-usage-access').hidden = !app || allowed;
+    const hasBattery = !!app && typeof app.batteryUnrestricted === 'function';
+    let unrestricted = false;
+    try { unrestricted = hasBattery && await app.batteryUnrestricted(); } catch { /* treated as restricted */ }
+    $('#battery-banner').hidden = !hasBattery || unrestricted;
+    $('#battery-access').hidden = !inApp;
+    $('#battery-access-status').textContent = !hasBattery ? 'Install the app v1.3 or later to send events while the app is in the background.'
+      : unrestricted ? 'Background: battery is Unrestricted, so events go out straight away.'
+        : 'Background: battery saving holds events until you open the app again.';
+    $('#btn-battery-access').hidden = !hasBattery || unrestricted;
+  }
+
+  // The app tells the page it's always on screen, so nothing says when the person comes back from
+  // Android's settings: check again every 2 s for half a minute.
+  function recheckAppAccess() {
+    let left = 15;
+    const timer = setInterval(() => {
+      renderAppAccess();
+      if (--left <= 0) clearInterval(timer);
+    }, 2000);
   }
 
   function setupUsageLog() {
@@ -4502,14 +4505,21 @@
     };
     wheel.addEventListener('pointerup', wheelDone, true);
     wheel.addEventListener('pointercancel', wheelDone, true);
-    $('#btn-usage-access').addEventListener('click', () => window.androidApp.openUsageAccess().catch(() => {}));
+    ['#btn-battery-access', '#btn-battery-banner'].forEach((sel) => $(sel).addEventListener('click', () => {
+      window.androidApp.askBatteryUnrestricted().catch(() => {});
+      recheckAppAccess();
+    }));
+    // Changed in Android's settings at any time, so checked now and every half minute.
+    if (window.androidApp && typeof window.androidApp.batteryUnrestricted === 'function') {
+      renderAppAccess();
+      setInterval(renderAppAccess, 30000);
+    }
     window.addEventListener('pagehide', saveLog);
-    // Sent when the page goes to the background; on coming back, Usage access may have changed.
+    // Sent when the page goes to the background; on coming back, the battery setting may have changed.
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') flushLog();
-      else renderUsageAccess();
+      else renderAppAccess();
     });
-    setInterval(logAppUsage, APP_USAGE_EVERY_MS);
     logEvent('open');
     sendLog();
   }

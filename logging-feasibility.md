@@ -7,7 +7,7 @@
 | 1. Did the user change something by hand, or was it automatic? | **Yes, reliably** |
 | 2. Who, which browser, which phone? | **Yes** (phone model on Android; computers give only the OS) |
 | 3. Lights dropping and coming back | **Yes** |
-| 4. Which other apps are running on the phone | **Only partly**, and only in our Android app |
+| 4. Which other apps are running on the phone | **Only partly**, and only in our Android app. Built in app v1.2, then **removed** in v1.4 |
 
 ---
 
@@ -74,6 +74,8 @@ The page already hears every disconnect from each light, and every reconnect.
 
 **Verdict:** it's worth it for the pilot if "which apps were used around the time of a light drop" is useful. It won't give a true "running in the background" list.
 
+**Decision (10/26/26): dropped.** On a Pixel, Android warned that Usage access is risky and wouldn't let it be switched on easily, and it isn't needed. App v1.4 no longer asks for it or has the permission.
+
 ---
 
 ## 5. Where the logs go (a suggestion)
@@ -87,5 +89,5 @@ users/<name>/mobile_and_desktop_sync_events/<id>   → { device, from, to, event
 - **Send logs in batches:** 10 seconds after activity stops (at most a minute after the first event), or once 50 events build up. That's **1 write instead of 50**. Logs share the free plan's 20,000 writes a day with the screen colour.
 - **Each event:** `{ type, at, … }`, with its own fields per type. Each batch carries the device info once.
 - **The rules need a new entry** for `mobile_and_desktop_sync_events`, then the rules must be republished.
-- **Tell the pilot users** what's logged, especially the app usage in section 4.
+- **Tell the pilot users** what's logged.
 - **The future sync** can read the same collection from the computer and the phone.

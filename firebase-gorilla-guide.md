@@ -180,7 +180,7 @@ In this example, Cyan is set to 0 (`boost[6]`), so cyan is ignored. If there's n
 
 ## 6. Documents 3 and on: `users/<name>/mobile_and_desktop_sync_events/<id>` (sync events)
 
-**What it holds:** a **batch** of up to 50 things that happened on one device: taps, changes, lights dropping and coming back, and (in the Android app) other apps on screen. It's for the pilot, so we can see which features people use and when lights drop.
+**What it holds:** a **batch** of up to 50 things that happened on one device: taps, changes, and lights dropping and coming back. It's for the pilot, so we can see which features people use and when lights drop.
 
 **This is the one that grows.** Every batch is a **new** document. Nothing is overwritten.
 
@@ -191,6 +191,7 @@ In this example, Cyan is set to 0 (`boost[6]`), so cyan is ignored. If there's n
 - **Straight away at 50 events.**
 - **When the page goes to the background** (another tab, or the phone's home screen).
 - **Idle devices send nothing.** No events means no batch.
+- **Android app: battery must be Unrestricted.** Otherwise Android holds the app's internet while it's in the background: events are still noted at the right time, but they only reach Firebase when the app is opened again. App v1.4 asks on every launch until it's set, and the page shows a warning at the top until then.
 
 The batch goes to the person picked on that device, under Screen colour sync. Until a key and a person are set, events wait on the device.
 
@@ -232,7 +233,6 @@ Every event has `type` and `at` (when, in ms).
 | `light_up` | A light connected | `light`, `connected`, `of`, and `downFor` (ms) if it had dropped since the page opened |
 | `all_down` | The last connected light went | `of`, `manual` |
 | `all_up` | Every light is connected | `of`, and `downFor` (ms) if they had all been down |
-| `app_used` | Android app only, with Usage access: another app was on screen | `app`, `package`, `from`. Here `at` is when it left the screen |
 
 What the fields mean:
 
@@ -250,14 +250,13 @@ What the fields mean:
   "device": { "id": "d557dzsn3", "kind": "app", "browser": "Android WebView 156", "os": "Android 15",
               "model": "Pixel 9 Pro", "maker": "Google", "name": "Prabhashwara's Pixel", "page": "1.8", "app": "1.2" },
   "from": 1793045700000,
-  "to": 1793045759000,
+  "to": 1793045733200,
   "events": [
     { "type": "tap", "at": 1793045700000, "control": "controls tab=scenes", "label": "Scenes", "mode": "colour" },
     { "type": "set", "at": 1793045712000, "control": "wheel", "label": "Colour wheel", "value": "#d6ffad", "from": "#ff0000", "mode": "colour" },
     { "type": "light_down", "at": 1793045730000, "light": "MELK-OA10 46", "connected": 3, "of": 4, "manual": false },
     { "type": "light_up", "at": 1793045733200, "light": "MELK-OA10 46", "connected": 4, "of": 4, "downFor": 3200 },
-    { "type": "all_up", "at": 1793045733200, "of": 4 },
-    { "type": "app_used", "at": 1793045759000, "app": "WhatsApp", "package": "com.whatsapp", "from": 1793045739000 }
+    { "type": "all_up", "at": 1793045733200, "of": 4 }
   ]
 }
 ```
@@ -510,8 +509,6 @@ Everything is in [index.html](index.html). Search for these names:
 | `logLights()` | Spots lights dropping and coming back (called on every render request) |
 | `setupUsageLog()` | The tap and change listeners (trusted only) and the colour wheel |
 | `logDevice()`, `detailLogDevice()` | The `device` map |
-| `logAppUsage()` | Android app: asks which apps were on screen, every 5 minutes |
-| `android/…/AppUsage.kt` | Android side: reads the apps on screen (needs Usage access) |
 
 Related reading:
 
