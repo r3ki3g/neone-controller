@@ -786,7 +786,7 @@
   const PAIRED_KEY = 'led-lights-paired-before';
   // Bumped with every change to this page. Shown under the title, because GitHub Pages takes a
   // few minutes to publish an update.
-  const PAGE_VERSION = '2.5';
+  const PAGE_VERSION = '2.6';
   // Screen colour sync goes through Firestore, so no server of our own. Everything below is an
   // identifier that grants nothing on its own; the apiKey is pasted once on each device and kept in
   // that browser, as in Gym notes. Never run `firebase deploy`: Firebase Hosting would publish the
@@ -858,6 +858,10 @@
   const LOG_WAIT_MS = 60000;
   // Unsent events kept at most, for example while offline or before a person is picked.
   const LOG_KEEP = 1000;
+  // A heartbeat goes out this often, even when nothing happened, so a computer can tell a quiet
+  // device from one that's offline, closed or failing to send. The first one soon after opening.
+  const HEARTBEAT_MS = 5 * 60000;
+  const FIRST_HEARTBEAT_MS = 30000;
   // One-off commands are written with a delivery confirmation; slider and music streams aren't,
   // so they never wait. Without it, a light can silently drop a command sent amid a burst of others.
   const CONFIRMED_KINDS = new Set(['power', 'mode', 'mic']);
@@ -4222,7 +4226,7 @@
 
   const usageLog = {
     queue: [], outbox: [], timer: null, waitingSince: 0, sending: false, device: null,
-    wheelFrom: null, batteryWarning: false, awayAt: 0,
+    wheelFrom: null, batteryWarning: false, awayAt: 0, lastSentAt: 0, lastError: '',
     // The connected lights (id → name), when each one dropped, and when the last one went.
     up: new Map(), downAt: new Map(), allDownAt: 0,
   };
@@ -4279,10 +4283,13 @@
           if (err.code !== 'permission-denied' || !(await fs.getDoc(ref)).exists()) throw err;
         }
         if (usageLog.outbox[0] === batch) usageLog.outbox.shift();
+        Object.assign(usageLog, { lastSentAt: Date.now(), lastError: '' });
         saveLog();
       }
-    } catch {
-      // Offline, out of quota or no key yet: tried again with the next batch.
+    } catch (err) {
+      // Out of quota, refused or no key yet: tried again with the next batch. (Offline, the write
+      // just waits.) The heartbeat reports it.
+      usageLog.lastError = err.code || err.message || 'failed';
     } finally {
       usageLog.sending = false;
     }
@@ -4433,6 +4440,29 @@
     }, 2000);
   }
 
+  // The heartbeat: how this device is doing right now. `waiting` growing while `lastSentAt` stays
+  // old means it can't send; no heartbeats at all means it's off, closed or offline.
+  async function sendHeartbeat() {
+    const all = lights();
+    let battery = null;
+    try { battery = navigator.getBattery ? await navigator.getBattery() : null; } catch { /* not offered */ }
+    const net = navigator.connection && navigator.connection.effectiveType;
+    const app = window.androidApp;
+    logEvent('heartbeat', {
+      foreground: !usageLog.awayAt,
+      lights: all.filter((d) => d.status === 'connected').length,
+      of: all.length,
+      ...(battery ? { battery: Math.round(battery.level * 100), charging: battery.charging } : {}),
+      online: navigator.onLine,
+      ...(net ? { network: net } : {}),
+      waiting: usageLog.queue.length + usageLog.outbox.reduce((n, b) => n + b.data.events.length, 0),
+      lastSentAt: usageLog.lastSentAt || null,
+      ...(usageLog.lastError ? { lastError: usageLog.lastError } : {}),
+      mode,
+      ...(app && typeof app.batteryUnrestricted === 'function' ? { unrestricted: !usageLog.batteryWarning } : {}),
+    });
+  }
+
   // Leaving and coming back, as sync events: `background` with why (left_app, screen_off or closing
   // in the Android app, tab_hidden in a browser), then `foreground` with how long it was away. A
   // fresh start is `open`.
@@ -4513,6 +4543,8 @@
       if (state === 'background') wentToBackground(reason || 'left_app');
       else if (state === 'foreground') cameBack();
     });
+    setTimeout(sendHeartbeat, FIRST_HEARTBEAT_MS);
+    setInterval(sendHeartbeat, HEARTBEAT_MS);
     logEvent('open');
     sendLog();
   }

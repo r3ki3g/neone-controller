@@ -190,7 +190,7 @@ In this example, Cyan is set to 0 (`boost[6]`), so cyan is ignored. If there's n
 - **At most a minute after the first event,** even if someone keeps tapping non-stop.
 - **Straight away at 50 events.**
 - **When the page goes to the background** (another tab, or the phone's home screen).
-- **Idle devices send nothing.** No events means no batch.
+- **Idle devices send only a heartbeat**, every 5 minutes, so the viewer can tell a quiet device from one that's off, closed, offline or failing to send: it marks a device live within 10 minutes of its last heartbeat, late within 20, then silent.
 - **Android app: battery must be Unrestricted.** Otherwise Android holds the app's internet while it's in the background: events are still noted at the right time, but they only reach Firebase when the app is opened again. App v1.4 asks on every launch until it's set, and the page shows a red warning at the top until then (logged as `battery_warning`).
 
 The batch goes to the person picked on that device, under Screen colour sync. Until a key and a person are set, events wait on the device.
@@ -235,6 +235,7 @@ Every event has `type` and `at` (when, in ms).
 | `light_up` | A light connected | `light`, `lightId`, `connected`, `of`, and `downFor` (ms) if it had dropped since the page opened |
 | `all_down` | The last connected light went | `of`, `manual` |
 | `all_up` | Every light is connected | `of`, and `downFor` (ms) if they had all been down |
+| `heartbeat` | Every 5 minutes (the first 30 s after opening), even when nothing happened, from every device (website v2.6+) | `foreground`, `lights` and `of` (connected of added), `battery` (%) and `charging` where the browser tells, `online`, `network` (for example `4g`), `waiting` (events not sent yet), `lastSentAt` (last batch that reached Firebase), `lastError` (why the last send failed), `mode`, `unrestricted` (app only: battery saving off) |
 | `position` | Android app v1.7+: where the phone is, once soon after launch | `face` (`face_up`, `upright`, `face_down`, `upside_down`, `left_side`, `right_side`), `pitch`, `roll`, `heading` (degrees, 0 = north), `q` (the 3D rotation as 4 numbers), `signal` |
 | `motion` | Android app v1.7+: one movement, from when the phone starts turning (2° or more) to when it has been still for 1.5 s. A quick look at a notification counts, even if the phone ends where it started. Movements longer than a minute come in one-minute pieces | `from` (when it started), `seconds`, `maxDegrees` (largest swing), `netDegrees` (start to end), `startFace`, then the end position as in `position`, `path` (`{at, q}`: a reading every half second or every 1° turned, up to 120), `ongoing` (a piece of a longer movement), `signal` |
 | `tilt` | Android app v1.6 only (replaced by `position` and `motion`): the phone turned more than 10° since the last one (at most once a minute) | `face` (`face_up`, `upright`, `face_down`, `upside_down`, `left_side`, `right_side`), `pitch`, `roll`, `heading` (degrees, `heading` 0 = north), `q` (the 3D rotation as 4 numbers), `path` (that minute's readings, `{at, q}` every 5 s while it moved), `signal` |
@@ -467,7 +468,8 @@ Writes run out first. Some rough numbers at the default settings:
 | Paused or still screen (check-ins only) | 120 |
 | Action movie, worst case (a jump every second) | 3,600 |
 | **20,000 writes lasts at least** | **about 5.6 hours of non-stop worst case** |
-| Sync events, per device in use | One per burst of activity (a burst ends after 10 s of quiet); 60 with non-stop activity; 0 when idle |
+| Sync events, per device in use | One per burst of activity (a burst ends after 10 s of quiet); 60 with non-stop activity |
+| Heartbeats, per device that's open | 12 (one every 5 minutes, about 288 a day), even when idle |
 
 **Stored data (1 GiB free):** sync events are mostly the phone's movements and nearby scans, a few MB a day per busy phone at most. Firestore normally builds a searchable index of every field, which can double what's stored; the `events` and `device` fields are left out of it (see [firebase/firestore.indexes.json](firebase/firestore.indexes.json)), since the viewer only ever searches by `from`.
 
