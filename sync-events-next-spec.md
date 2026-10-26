@@ -1,6 +1,8 @@
 # Sync events: next features (spec, 10/26/26)
 
 > **Built** in app v1.6, website v2.4 and the dev viewer, with the recommended choices: tilt at most once a minute when it turned more than 10°, light signal strength included, a nearby scan every 5 minutes plus one after a light drop, compass kept. One change from the spec: `path` rows are `{ at, q }` maps, because Firestore can't store a list inside a list.
+>
+> **Changed in app v1.7 / website v2.5:** the once-a-minute `tilt` is replaced by `position` (at launch) and one `motion` event per movement (2° or more, ending after 1.5 s still), so quick pickups are caught; see firebase-gorilla-guide.md, section 6.
 
 Covers everything discussed so far: app state (done), phone tilt, nearby Bluetooth devices, and how the viewer shows them. Everything here is a sync event in `users/<name>/mobile_and_desktop_sync_events`, batched as today.
 

@@ -786,7 +786,7 @@
   const PAIRED_KEY = 'led-lights-paired-before';
   // Bumped with every change to this page. Shown under the title, because GitHub Pages takes a
   // few minutes to publish an update.
-  const PAGE_VERSION = '2.4';
+  const PAGE_VERSION = '2.5';
   // Screen colour sync goes through Firestore, so no server of our own. Everything below is an
   // identifier that grants nothing on its own; the apiKey is pasted once on each device and kept in
   // that browser, as in Gym notes. Never run `firebase deploy`: Firebase Hosting would publish the
@@ -4501,11 +4501,12 @@
       if (document.visibilityState === 'hidden') wentToBackground('tab_hidden');
       else cameBack();
     });
-    // The app's own readings (app v1.6 and later): the phone's position with the lights' signal
-    // (`tilt`), the lights' signal alone (`signal`) and nearby Bluetooth devices (`ble_scan`).
+    // The app's own readings: where the phone is (`position`) and each movement (`motion`, app
+    // v1.7 and later; v1.6 sent `tilt` once a minute instead), the lights' signal (`signal`) and
+    // nearby Bluetooth devices (`ble_scan`).
     window.addEventListener('androidsyncevent', (e) => {
       const { type, ...details } = e.detail || {};
-      if (['tilt', 'signal', 'ble_scan'].includes(type)) logEvent(type, details);
+      if (['position', 'motion', 'tilt', 'signal', 'ble_scan'].includes(type)) logEvent(type, details);
     });
     window.addEventListener('androidappstate', (e) => {
       const { state, reason } = e.detail || {};

@@ -31,7 +31,7 @@ Chrome pauses a page a few seconds after you switch to another app, which freeze
 - A foreground service, with the notification "Keeping your lights connected", stops Android pausing the app. While a replay or the phone mic runs, it also keeps the CPU awake.
 - The page is always told it's visible, so its timers run at full speed in the background.
 - It needs internet to start; without it, a "No internet" screen offers Try again.
-- For sync events (app v1.2 and later): it tells the page the phone's maker, model and name, (v1.5 and later) when the app goes to the background and comes back, since the page itself always counts as on screen, and (v1.6 and later) its own readings: the phone's position from its motion sensors (at most once a minute, when it turned), each light's signal strength, and a scan of nearby Bluetooth devices every 5 minutes and after a light drops. It doesn't look at other apps.
+- For sync events (app v1.2 and later): it tells the page the phone's maker, model and name, (v1.5 and later) when the app goes to the background and comes back, since the page itself always counts as on screen, and (v1.6 and later) its own readings: the phone's position and each movement from its motion sensors (v1.7 and later; a quick pickup counts, a still phone sends nothing), each light's signal strength, and a scan of nearby Bluetooth devices every 5 minutes and after a light drops. It doesn't look at other apps.
 - On every launch until it's set (app v1.4 and later), it asks to set its battery use to Unrestricted, because Android otherwise holds its internet in the background: following a screen's colour stops and sync events wait until the app is opened again. Until then a red warning with a button stays at the top of the page, and its appearing and going away are sync events, so a computer can show it too.
 
 `index.html` is the single source of truth: website changes reach the app on its next launch. Only changes to the native code need a new APK. The page shows "Website v…" under the title (and "App v…" inside the app); bump `PAGE_VERSION` in `index.html` with each change, and `versionName` in `android/app/build.gradle.kts` with each app change.
@@ -44,7 +44,7 @@ cd android
 # Writes MyLEDLights_v<version>.apk next to index.html, replacing the previous one.
 ```
 
-Install it with `adb install -r MyLEDLights_v1.4.apk` (USB debugging on), or copy the file to the phone and open it. The app is signed with this Mac's debug key, so updates must be built on the same Mac; otherwise uninstall first, which deletes the app's saved replays. The app keeps its own remembered lights and replays, separate from Chrome: add the lights once, and move replays with Export and Import.
+Install it with `adb install -r MyLEDLights_v1.7.apk` (USB debugging on), or copy the file to the phone and open it. The app is signed with this Mac's debug key, so updates must be built on the same Mac; otherwise uninstall first, which deletes the app's saved replays. The app keeps its own remembered lights and replays, separate from Chrome: add the lights once, and move replays with Export and Import.
 
 Limit: "This phone's mic" music patterns only listen while the app is open, because Android doesn't let a background app use the mic without a separate permission type.
 
@@ -66,7 +66,8 @@ Firebase console setup, done once:
 
 1. Firestore Database created in production mode, and `firebase/firestore.rules` published under Rules (publish it again after it changes).
 2. Authentication → Sign-in method → Anonymous enabled; Authorized domains include `r3ki3g.github.io`.
-3. Recommended: Google Cloud Console → APIs & Services → Credentials → Browser key → website restriction `r3ki3g.github.io/*`.
+3. Firestore Database → Indexes → Single field → Add exemption, for collection `mobile_and_desktop_sync_events`, field `events`, with every index type turned off for both the collection and the collection group. Repeat for field `device`. This keeps Firestore from building a searchable copy of every event, which would roughly double the stored data; [firebase/firestore.indexes.json](firebase/firestore.indexes.json) records the same setting.
+4. Recommended: Google Cloud Console → APIs & Services → Credentials → Browser key → website restriction `r3ki3g.github.io/*`.
 
 Testing without the real project: in `firebase/`, run `firebase emulators:start --only firestore,auth --project neon-controller-cf97b`, then open the page with `?emulator=127.0.0.1` and any key ending in `---Prabhashwara`.
 
