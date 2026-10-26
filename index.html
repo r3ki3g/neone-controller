@@ -130,6 +130,23 @@
     #fb-key { flex: 1; min-width: 180px; font-family: ui-monospace, Menlo, monospace; }
     #fb-person { flex: 1; min-width: 160px; }
     #screen-every { max-width: 160px; }
+    /* Brightness range: two sliders share one track and only their handles take the pointer. The
+       track is inset by half a handle, so --lo and --hi (0–100%) line up with the handles. */
+    .range2 { --lo: 0%; --hi: 100%; position: relative; height: 32px; margin: 4px 0 2px; }
+    .range2::before { content: ""; position: absolute; left: 11px; right: 11px; top: 13px; height: 6px; border-radius: 3px;
+      background: linear-gradient(to right, var(--border) var(--lo), var(--accent) var(--lo), var(--accent) var(--hi), var(--border) var(--hi)); }
+    .range2 input[type=range] { position: absolute; inset: 0; width: 100%; min-width: 0; height: 32px; margin: 0;
+      -webkit-appearance: none; appearance: none; background: none; pointer-events: none; }
+    .range2 input[type=range]::-webkit-slider-runnable-track { height: 32px; background: none; }
+    .range2 input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 22px; height: 22px; margin-top: 5px;
+      border-radius: 50%; border: 2px solid #fff; background: var(--accent); cursor: pointer; }
+    .range2 input[type=range]::-moz-range-track { background: none; }
+    .range2 input[type=range]::-moz-range-thumb { pointer-events: auto; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff;
+      background: var(--accent); cursor: pointer; }
+    .range-value { color: var(--text); font-variant-numeric: tabular-nums; }
+    #bright-how { margin-top: 10px; }
+    #bright-how-hint { margin: 6px 0 0; }
+    #bright-now { margin: 6px 0 0; color: var(--text); }
     .hint.warn { color: var(--warn); }
     #screen-preview { display: block; width: 100%; max-height: 180px; margin-top: 10px; border-radius: 8px; background: #000; }
     /* Colour equalizers: one upright slider per band of hues, tinted with its colour. */
@@ -318,6 +335,27 @@
           <span id="screen-swatch" class="screen-swatch"></span>
           <span id="screen-status" class="hint"></span>
         </div>
+        <!-- How the lights follow: always applied on this device, and remembered on it. -->
+        <div id="follow-options">
+          <label for="bright-min">Brightness range: <span id="bright-range-value" class="range-value"></span></label>
+          <div id="bright-range" class="range2">
+            <input id="bright-min" type="range" min="1" max="100" step="1" aria-label="Lowest brightness">
+            <input id="bright-max" type="range" min="1" max="100" step="1" aria-label="Highest brightness">
+          </div>
+          <p class="hint">Always applied while following: dark scenes keep the room at least the lowest, bright scenes stay under the highest.</p>
+          <div id="bright-how" class="chips">
+            <button class="chip" data-how="fit">Fit into the range</button>
+            <button class="chip" data-how="cut">Cut off at the edges</button>
+          </div>
+          <p id="bright-how-hint" class="hint"></p>
+          <p id="bright-now" class="hint" hidden></p>
+          <label class="check"><input id="screen-bright" type="checkbox" checked> Follow the screen's brightness</label>
+          <label for="screen-fade">Smoothness</label>
+          <div class="row">
+            <input id="screen-fade" type="range" min="0" max="3000" step="100" value="800">
+            <span id="screen-fade-value" class="value">0.8 s</span>
+          </div>
+        </div>
         <!-- Blocks with an id of blk-… sit in their data-slot here, or in the matching data-flow-slot of
              "How the colour is picked" when that feature is on. -->
         <div id="screen-send-options">
@@ -411,7 +449,7 @@
                   <span id="tune-soften-value" class="value"></span>
                 </div>
                 <p class="hint">How many seconds of screen the colour is based on, so a quick flash doesn't change it.
-                  Smoothness, below, is how long the lights take to fade to it.</p>
+                  Smoothness, above, is how long the lights take to fade to it.</p>
               </div>
             </div>
           </div>
@@ -529,12 +567,6 @@
             </div>
           </div>
         </details>
-        <label for="screen-fade">Smoothness</label>
-        <div class="row">
-          <input id="screen-fade" type="range" min="0" max="3000" step="100" value="800">
-          <span id="screen-fade-value" class="value">0.8 s</span>
-        </div>
-        <label class="check"><input id="screen-bright" type="checkbox" checked> Follow the screen's brightness</label>
         <div data-slot="preview"><div id="blk-preview"><video id="screen-preview" muted playsinline hidden></video></div></div>
       </details>
     </div>
@@ -786,7 +818,7 @@
   const PAIRED_KEY = 'led-lights-paired-before';
   // Bumped with every change to this page. Shown under the title, because GitHub Pages takes a
   // few minutes to publish an update.
-  const PAGE_VERSION = '2.6';
+  const PAGE_VERSION = '2.7';
   // Screen colour sync goes through Firestore, so no server of our own. Everything below is an
   // identifier that grants nothing on its own; the apiKey is pasted once on each device and kept in
   // that browser, as in Gym notes. Never run `firebase deploy`: Firebase Hosting would publish the
@@ -811,6 +843,13 @@
   const SCREEN_GAP_STEPS = [0.2, 0.25, 0.33, 0.5, 0.75, 1, 1.5, 2, 2.5, 3];
   const SCREEN_HEARTBEAT_MS = 30000;
   const SCREEN_STALE_MS = 45000;
+  // Both detectors send brightness as 10 + 90 × √(lightness), so 10 is the darkest a screen gets.
+  // The device following fits 10–100 into its own brightness range, or cuts it off at the edges.
+  const SCREEN_DARKEST = 10;
+  const BRIGHT_HOW = {
+    fit: "The screen's brightness, from its darkest to its brightest, is squeezed into the range, so scenes still differ, just less.",
+    cut: 'Brightness inside the range stays as it is; anything darker or brighter is held at the nearest edge.',
+  };
   // Firestore's free plan: writes per day for the whole project (reads allow 50,000, so writes run
   // out first). Past it, writes fail until midnight US Pacific time.
   const FREE_WRITES_PER_DAY = 20000;
@@ -894,13 +933,14 @@
   const DEFAULT_LINK = { ms: 3000, curve: 'smooth', path: 'short' };
 
   // Features that can be turned off in Settings. All are on by default; `needs` lists
-  // features that must also be on.
+  // features that must also be on. A `computerOnly` one is left out on devices that can't share
+  // their screen.
   const FEATURES = [
     { key: 'scenes', group: 'Lights', name: 'Scenes', desc: 'Built-in light effects such as Rainbow and Strobe, in the Scenes tab.' },
     { key: 'catchup', group: 'Lights', name: 'Catch up reconnecting lights', desc: 'A light that drops out briefly still gets the changes made in the last 20 seconds.' },
     { key: 'screen', group: 'Lights', name: 'Screen colour sync', desc: 'The lights follow the main colour on a computer screen, through the internet.' },
     { key: 'screenTune', group: 'Lights', name: 'Advanced colour detection', desc: 'Screen colour sync looks at the screen continuously, softens it over time, and follows your colour boost and favourite colours. Off: the simple detector, with white for screens without colour.', needs: ['screen'] },
-    { key: 'screenFlow', group: 'Lights', name: 'Show how the colour is picked', desc: 'Colour tuning shows every step live on the computer, from the shared screen to the colour sent, with each setting beside its step. Off: the compact Colour tuning.', needs: ['screen'] },
+    { key: 'screenFlow', group: 'Lights', name: 'Show how the colour is picked', desc: 'Colour tuning shows every step live on the computer, from the shared screen to the colour sent, with each setting beside its step. Off: the compact Colour tuning.', needs: ['screen'], computerOnly: true },
     { key: 'music', group: 'Music', name: 'Music reactive lights', desc: "Lights react to music, using their own mics or this phone's mic." },
     { key: 'replays', group: 'Replays', name: 'Replays', desc: 'Keep recorded colour changes and play them back, in the Replays tab.' },
     { key: 'record', group: 'Replays', name: 'Record colour changes', desc: 'Adds the ● Record colour changes button to the Colour tab.', needs: ['replays'] },
@@ -1033,8 +1073,15 @@
   const settings = {
     wheel: false, smoothing: 'smooth', speed: 1, repeat: false, repeatAll: false,
     person: '', screenEvery: 3000, screenGap: 1, screenScan: 10, flowMaths: true, features: {}, collapsed: {},
+    brightMin: SCREEN_DARKEST, brightMax: 100, brightHow: 'fit', screenFade: 800,
     ...loadJson(SETTINGS_KEY, {}),
   };
+  const wholeIn = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+  if (!wholeIn(settings.brightMin, 1, 100) || !wholeIn(settings.brightMax, settings.brightMin, 100)) {
+    Object.assign(settings, { brightMin: SCREEN_DARKEST, brightMax: 100 });
+  }
+  if (!BRIGHT_HOW[settings.brightHow]) settings.brightHow = 'fit';
+  if (!wholeIn(settings.screenFade, 0, 3000)) settings.screenFade = 800;
   if (!SMOOTHING_LABELS[settings.smoothing]) settings.smoothing = 'smooth';
   if (!PEOPLE.includes(settings.person)) settings.person = '';
   if (![1000, 3000, 5000, 10000, 30000].includes(settings.screenEvery)) settings.screenEvery = 3000;
@@ -3429,7 +3476,7 @@
     const tune = $('#screen-tune');
     if (now - screenScan.drawnAt < 200 || document.hidden || tune.hidden || !tune.open) return;
     screenScan.drawnAt = now;
-    if (featureOn('screenFlow')) drawFlow();
+    if (flowShown()) drawFlow();
     else if (screenScan.result && featureOn('screenTune')) drawTuneLive(screenScan.result);
   }
 
@@ -3819,10 +3866,16 @@
   const TUNE_CONTROLS = ['#tune-presets', '#blk-boost', '#blk-fav', '#blk-strength', '#blk-min', '#blk-soften']
     .map((id) => `${id} input, ${id} select, ${id} button`).join(', ');
 
+  // "How the colour is picked" only means something where the screen is shared, so a phone always
+  // has the compact Colour tuning: just the settings.
+  function flowShown() {
+    return screenCanSend && featureOn('screenFlow');
+  }
+
   // Places each setting for the layout in use: the compact Colour tuning, or "How the colour is
   // picked", where each sits beside its step. The same controls move, so nothing is duplicated.
   function layoutTune() {
-    const flow = featureOn('screenFlow');
+    const flow = flowShown();
     const advanced = featureOn('screenTune');
     ['preview', 'scan', 'send', 'soften', 'boost', 'min', 'fav', 'strength'].forEach((key) => {
       document.querySelector(flow ? `[data-flow-slot="${key}"]` : `[data-slot="${key}"]`).append($(`#blk-${key}`));
@@ -3839,9 +3892,7 @@
     $('#blk-scan').hidden = !screenCanSend || !advanced;
     // The simple detector has no preset, so its flow has no preset settings.
     ['boost', 'min', 'fav', 'strength', 'soften'].forEach((key) => { $(`#blk-${key}`).hidden = !advanced; });
-    $('#flow-idle').textContent = screenCanSend
-      ? 'Press Send this screen to watch each step live.'
-      : 'The pictures show on the computer while it sends. You can tune here and watch your lights change.';
+    $('#flow-idle').textContent = 'Press Send this screen to watch each step live.';
   }
 
   function buildEqualizer(root, key, max, step) {
@@ -4075,23 +4126,79 @@
     screenFollow.sentAt = data.t;
     // The last colour left behind by a computer that has since stopped isn't worth showing.
     if (Date.now() - data.t > SCREEN_STALE_MS) return;
-    const b = $('#screen-bright').checked ? Math.min(100, Math.max(1, data.b)) : screenFollow.brightness;
-    const target = { h: data.h % 360, s: Math.min(1000, Math.max(0, data.s)) / 1000, b };
+    // `raw` is the screen's own brightness, kept so a change of range can be applied to it.
+    const target = { h: data.h % 360, s: Math.min(1000, Math.max(0, data.s)) / 1000, b: followBrightness(data.b), raw: data.b };
     screenFollow.from = screenFollow.shown || target;
     screenFollow.target = target;
     screenFollow.startedAt = performance.now();
     screenFollow.heardAt = Date.now();
   }
 
+  // The lights' brightness for a screen brightness: the screen's squeezed into this device's range
+  // (`fit`) or cut off at its edges (`cut`). With "Follow the screen's brightness" off, the
+  // brightness from when following began is used, kept inside the range too.
+  function followBrightness(screenB) {
+    const { brightMin: lo, brightMax: hi } = settings;
+    const within = (v) => Math.min(hi, Math.max(lo, v));
+    if (!$('#screen-bright').checked) return within(screenFollow.brightness);
+    const b = Math.min(100, Math.max(1, screenB));
+    if (settings.brightHow === 'cut') return within(b);
+    return lo + (Math.max(0, b - SCREEN_DARKEST) / (100 - SCREEN_DARKEST)) * (hi - lo);
+  }
+
+  // After a change to the range, how it's applied or the tick box: saved, and while following the
+  // lights fade to the new brightness over Smoothness.
+  function brightRangeChanged() {
+    saveSettings();
+    renderBrightRange();
+    const f = screenFollow;
+    if (!f.target) return;
+    f.from = f.shown || f.target;
+    f.target = { ...f.target, b: followBrightness(f.target.raw) };
+    f.startedAt = performance.now();
+    renderBrightNow();
+  }
+
+  function renderBrightRange() {
+    const { brightMin: lo, brightMax: hi, brightHow } = settings;
+    $('#bright-min').value = String(lo);
+    $('#bright-max').value = String(hi);
+    // Where the handles meet, the one that can still move goes on top: the lower one near the top end.
+    $('#bright-min').style.zIndex = lo > 50 ? 2 : 0;
+    $('#bright-max').style.zIndex = 1;
+    $('#bright-range').style.setProperty('--lo', `${((lo - 1) / 99) * 100}%`);
+    $('#bright-range').style.setProperty('--hi', `${((hi - 1) / 99) * 100}%`);
+    $('#bright-range-value').textContent = `${lo.toFixed(1)}% – ${hi.toFixed(1)}%`;
+    document.querySelectorAll('#bright-how [data-how]').forEach((chip) => chip.classList.toggle('active', chip.dataset.how === brightHow));
+    $('#bright-how-hint').textContent = BRIGHT_HOW[brightHow];
+  }
+
+  // While following: what the screen sent and what the lights get.
+  function renderBrightNow() {
+    const f = screenFollow;
+    const el = $('#bright-now');
+    el.hidden = !f.target;
+    if (!f.target) return;
+    const from = $('#screen-bright').checked ? `screen ${Math.min(100, Math.max(1, f.target.raw)).toFixed(1)}%` : `fixed ${f.brightness.toFixed(1)}%`;
+    const text = `Now: ${from} → lights ${Math.max(1, Math.round(f.target.b)).toFixed(1)}%`;
+    if (el.textContent !== text) el.textContent = text;
+  }
+
+  function renderFade() {
+    $('#screen-fade').value = String(settings.screenFade);
+    $('#screen-fade-value').textContent = `${(settings.screenFade / 1000).toFixed(1)} s`;
+  }
+
   function screenFollowTick() {
     const f = screenFollow;
     if (f.target) {
-      const fade = Number($('#screen-fade').value);
+      const fade = settings.screenFade;
       const e = fade ? Math.min(1, (performance.now() - f.startedAt) / fade) : 1;
       f.shown = travel(f.from, f.target, EASE.smooth(e), 'short');
       applyShowState(f.shown, f);
       showScreenSwatch({ h: f.shown.h, s: f.shown.s * 1000, b: f.shown.b });
     }
+    renderBrightNow();
     const age = Date.now() - f.heardAt;
     const seconds = (ms) => Math.max(0, Math.round(ms / 1000)).toLocaleString();
     if (!f.heardAt) {
@@ -4109,6 +4216,7 @@
     screenFollow.unsubscribe();
     clearInterval(screenFollow.timer);
     Object.assign(screenFollow, { unsubscribe: null, timer: null, target: null });
+    renderBrightNow();
     releaseAwake();
     $('#btn-screen-follow').textContent = '▶ Follow my screen';
     setScreenStatus('Stopped following.');
@@ -4153,8 +4261,28 @@
     $('#btn-screen-follow').addEventListener('click', () => (screenFollow.unsubscribe ? stopScreenFollow() : startScreenFollow()));
     $('#btn-screen-send').addEventListener('click', () => (screenSend.stream ? stopScreenSend() : startScreenSend()));
     $('#screen-fade').addEventListener('input', (e) => {
-      $('#screen-fade-value').textContent = `${(Number(e.target.value) / 1000).toFixed(1)} s`;
+      settings.screenFade = Number(e.target.value);
+      saveSettings();
+      renderFade();
     });
+    renderFade();
+    // The two handles can't pass each other.
+    $('#bright-min').addEventListener('input', (e) => {
+      settings.brightMin = Math.min(Number(e.target.value), settings.brightMax);
+      brightRangeChanged();
+    });
+    $('#bright-max').addEventListener('input', (e) => {
+      settings.brightMax = Math.max(Number(e.target.value), settings.brightMin);
+      brightRangeChanged();
+    });
+    $('#bright-how').addEventListener('click', (e) => {
+      const chip = e.target.closest('[data-how]');
+      if (!chip) return;
+      settings.brightHow = chip.dataset.how;
+      brightRangeChanged();
+    });
+    $('#screen-bright').addEventListener('change', brightRangeChanged);
+    renderBrightRange();
     // Phones can't share their screen; the computer side is for Chrome or Edge on a computer.
     const canSend = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia && window.ImageCapture);
     screenCanSend = canSend;
@@ -4577,6 +4705,7 @@
       input.checked = settings.features[f.key] !== false;
       input.disabled = !parentsOn;
       input.closest('.feature').classList.toggle('blocked', !parentsOn);
+      input.closest('.feature').hidden = !!f.computerOnly && !screenCanSend;
     });
   }
 

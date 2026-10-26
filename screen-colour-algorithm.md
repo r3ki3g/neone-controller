@@ -49,3 +49,4 @@ Twice a second, or as often as the "at most every" slider allows sending:
 
 - **Sending:** a big change (hue moves 40° or more, colour↔white, or brightness moves 25 points) is sent as soon as the "at most every" slider allows. Smaller visible changes wait for the "every" interval. An unchanged screen checks in every 30 s. Scanning more often doesn't send more.
 - **Fading:** the phone fades the lights to each new colour over the Smoothness time, taking the short way round the colour wheel.
+- **Brightness range (on the phone):** the screen's brightness b (10–100) is brought into the phone's range [lowest, highest] before fading. Fit: lowest + (b − 10) ÷ 90 × (highest − lowest). Cut off: b held between lowest and highest. For example, with 40.0–70.0%, a screen at 25.0% gives 45.0% (fit) or 40.0% (cut off). The computer always sends the screen's own brightness, so the range works with any sender.
