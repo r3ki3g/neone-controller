@@ -21,9 +21,6 @@
               border-radius: 12px; padding: 16px; margin-bottom: 16px; }
     section.banner { border-color: var(--warn); }
     section.banner h2 { color: var(--warn); }
-    section.banner.danger { border-color: var(--err); background: #2a1519; }
-    section.banner.danger h2 { color: var(--err); }
-    section.banner.danger button { background: var(--err); color: #fff; }
     .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     button { font: inherit; border: 0; border-radius: 8px; padding: 10px 14px;
              background: var(--accent); color: #fff; cursor: pointer; }
@@ -144,8 +141,6 @@
     .range2 input[type=range]::-moz-range-thumb { pointer-events: auto; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff;
       background: var(--accent); cursor: pointer; }
     .range-value { color: var(--text); font-variant-numeric: tabular-nums; }
-    #bright-how { margin-top: 10px; }
-    #bright-how-hint { margin: 6px 0 0; }
     #bright-now { margin: 6px 0 0; color: var(--text); }
     .hint.warn { color: var(--warn); }
     #screen-preview { display: block; width: 100%; max-height: 180px; margin-top: 10px; border-radius: 8px; background: #000; }
@@ -213,6 +208,21 @@
     details ol { padding-left: 20px; margin-bottom: 0; }
     details li { margin-bottom: 6px; }
     .empty { color: var(--muted); font-size: .9rem; margin-top: 10px; }
+    .hint.err { color: var(--err); }
+    /* The full-screen setup block: opaque and above everything, so nothing behind it can be used. */
+    .blocker { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: var(--bg); overflow-y: auto; }
+    .blocker-box { width: min(100%, 520px); background: var(--panel); border: 1px solid var(--err); border-radius: 12px; padding: 20px; }
+    .blocker-box h2 { color: var(--err); }
+    .blocker-step { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
+    .blocker-step button { background: var(--err); }
+    #rename-dialog { width: min(92vw, 420px); background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+    #rename-dialog::backdrop { background: #000a; }
+    /* Each light's signal and how fast it answers, with the last 10 minutes as small curves. */
+    .light .health { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; font-size: .8rem; color: var(--muted); }
+    .light .health svg { display: block; width: 120px; height: 26px; background: var(--bg); border-radius: 4px; }
+    .light .health .curve { display: flex; align-items: center; gap: 6px; }
+    .light .real-name { color: var(--muted); font-size: .78rem; }
+    .badge.slow { background: #3a2f12; color: var(--warn); }
     .send-stat { padding: 8px 0; border-top: 1px solid var(--border); word-break: break-word; }
     .send-stat:first-child { border-top: 0; }
     #send-mode-desc { margin: 8px 0 0; }
@@ -220,6 +230,38 @@
   </style>
 </head>
 <body>
+<!-- In the Android app, until Android lets it run in the background: covers the whole app, with no
+     way past it, because without this the lights stop following and sync events stop. -->
+<div id="setup-block" class="blocker" role="alertdialog" aria-modal="true" aria-labelledby="setup-block-title" hidden>
+  <div class="blocker-box">
+    <h2 id="setup-block-title">One setting before you start</h2>
+    <p>My LED Lights has to keep running in the background, or the lights stop following your screen and changes stop
+      reaching them. Android needs your permission for that.</p>
+    <div id="block-battery" class="blocker-step" hidden>
+      <p><b>Battery use: Unrestricted.</b> Tap the button and choose Allow.</p>
+      <button id="btn-block-battery">Set battery to Unrestricted</button>
+    </div>
+    <div id="block-background" class="blocker-step" hidden>
+      <p><b>Background usage: allowed.</b> In the settings that open, go to App battery usage and turn on Allow background usage.</p>
+      <button id="btn-block-background">Open app settings</button>
+    </div>
+    <p class="hint">This closes by itself as soon as Android allows it.</p>
+  </div>
+</div>
+<!-- Renaming a light: the name people see. The light's own name stays in logs and sync events. -->
+<dialog id="rename-dialog">
+  <form method="dialog">
+    <h2>Rename light</h2>
+    <p id="rename-real" class="hint"></p>
+    <label for="rename-input">Name</label>
+    <input id="rename-input" maxlength="40" autocomplete="off">
+    <div class="row" style="margin-top: 12px">
+      <button id="btn-rename-save" value="save">Save</button>
+      <button class="secondary" value="cancel" formnovalidate>Cancel</button>
+      <button id="btn-rename-reset" class="link" value="reset" formnovalidate>Use its own name</button>
+    </div>
+  </form>
+</dialog>
 <main>
   <div class="topbar">
     <h1>My LED Lights</h1>
@@ -229,12 +271,6 @@
 
   <div id="view-main">
 
-  <section id="battery-banner" class="banner danger" hidden>
-    <h2>Battery saving is holding the app back</h2>
-    <p>While My LED Lights is in the background, Android pauses its internet: following a screen's colour stops,
-      and sync events wait until you open the app again. Set its battery use to Unrestricted to fix this.</p>
-    <button id="btn-battery-banner">Set to Unrestricted</button>
-  </section>
 
   <section id="setup-banner" class="banner" hidden>
     <h2>One-time setup to auto-connect</h2>
@@ -334,6 +370,11 @@
           <button id="btn-screen-follow" class="secondary">▶ Follow my screen</button>
           <button id="btn-screen-send" class="secondary">🖥 Send this screen</button>
         </div>
+        <!-- The same setting as in Settings → Bluetooth, shown here too because following is when it matters. -->
+        <div class="fast-turns-row" hidden>
+          <label class="check"><input type="checkbox" data-fast-turns> Faster Bluetooth turns</label>
+          <p class="hint fast-turns-battery err" hidden></p>
+        </div>
         <div class="row" style="margin-top: 10px">
           <span id="screen-swatch" class="screen-swatch"></span>
           <span id="screen-status" class="hint"></span>
@@ -345,12 +386,8 @@
             <input id="bright-min" type="range" min="1" max="100" step="1" aria-label="Lowest brightness">
             <input id="bright-max" type="range" min="1" max="100" step="1" aria-label="Highest brightness">
           </div>
-          <p class="hint">Always applied while following: dark scenes keep the room at least the lowest, bright scenes stay under the highest.</p>
-          <div id="bright-how" class="chips">
-            <button class="chip" data-how="fit">Fit into the range</button>
-            <button class="chip" data-how="cut">Cut off at the edges</button>
-          </div>
-          <p id="bright-how-hint" class="hint"></p>
+          <p class="hint">Always applied while following: the screen's brightness, from its darkest to its brightest, is squeezed into this range,
+            so dark scenes keep the room at least the lowest and bright scenes stay under the highest.</p>
           <p id="bright-now" class="hint" hidden></p>
           <label class="check"><input id="screen-bright" type="checkbox" checked> Follow the screen's brightness</label>
           <label for="screen-fade">Smoothness</label>
@@ -761,11 +798,19 @@
         A feature that needs another one is greyed out while that one is off.</p>
       <div id="feature-list"></div>
       <details class="section" data-collapse="settings-sending" open>
-        <summary>Bluetooth sending</summary>
+        <summary>Bluetooth</summary>
+        <label>Sending</label>
         <p class="hint">How colour and brightness changes go to each light, for comparing which keeps every light in step.
-          Diagnostics shows how each light keeps up.</p>
+          Lights shows how each light keeps up.</p>
         <div id="send-mode" class="chips"></div>
         <p id="send-mode-desc" class="hint"></p>
+        <label class="feature fast-turns-setting">
+          <input type="checkbox" data-fast-turns>
+          <span><span class="feature-name">Faster Bluetooth turns</span><span class="hint feature-desc">Asks Android to talk to each light
+            every 11–15 ms instead of every 30–50 ms, so a light that's falling behind catches up faster. Uses more battery, and some
+            lights may refuse it.</span><span class="needs"></span>
+            <span class="hint fast-turns-battery err" hidden></span></span>
+        </label>
       </details>
     </section>
   </div>
@@ -832,7 +877,7 @@
   const PAIRED_KEY = 'led-lights-paired-before';
   // Bumped with every change to this page. Shown under the title, because GitHub Pages takes a
   // few minutes to publish an update.
-  const PAGE_VERSION = '2.8';
+  const PAGE_VERSION = '2.9';
   // Screen colour sync goes through Firestore, so no server of our own. Everything below is an
   // identifier that grants nothing on its own; the apiKey is pasted once on each device and kept in
   // that browser, as in Gym notes. Never run `firebase deploy`: Firebase Hosting would publish the
@@ -858,12 +903,8 @@
   const SCREEN_HEARTBEAT_MS = 30000;
   const SCREEN_STALE_MS = 45000;
   // Both detectors send brightness as 10 + 90 × √(lightness), so 10 is the darkest a screen gets.
-  // The device following fits 10–100 into its own brightness range, or cuts it off at the edges.
+  // The device following fits 10–100 into its own brightness range.
   const SCREEN_DARKEST = 10;
-  const BRIGHT_HOW = {
-    fit: "The screen's brightness, from its darkest to its brightest, is squeezed into the range, so scenes still differ, just less.",
-    cut: 'Brightness inside the range stays as it is; anything darker or brighter is held at the nearest edge.',
-  };
   // Firestore's free plan: writes per day for the whole project (reads allow 50,000, so writes run
   // out first). Past it, writes fail until midnight US Pacific time.
   const FREE_WRITES_PER_DAY = 20000;
@@ -931,6 +972,16 @@
   const THROTTLE_MS = 100;
   // Diagnostics shows how each light kept up over this long.
   const SEND_STATS_MS = 10000;
+  // Light health, under each light and in research data: a sample every 5 s (the signal in the
+  // app), 30 minutes kept, the last 10 shown. A light answering SLOW_FACTOR × slower than the
+  // others' median, and over SLOW_MIN_MS, is marked Slow.
+  const HEALTH_SAMPLE_MS = 5000;
+  const HEALTH_KEEP_MS = 30 * 60000;
+  const HEALTH_SHOW_MS = 10 * 60000;
+  const SLOW_FACTOR = 3;
+  const SLOW_MIN_MS = 100;
+  // Faster Bluetooth turns shows a warning below this battery level.
+  const FAST_TURNS_BATTERY = 0.3;
   // Dimmer rim: angles clockwise from 12 o'clock. Min at 210° (bottom left), Max 300° further round.
   // Brightness runs 1–100: the rim never switches the lights off.
   const RIM_START = 210;
@@ -1100,15 +1151,18 @@
   const settings = {
     wheel: false, smoothing: 'smooth', speed: 1, repeat: false, repeatAll: false,
     person: '', screenEvery: 3000, screenGap: 1, screenScan: 10, flowMaths: true, features: {}, collapsed: {},
-    brightMin: SCREEN_DARKEST, brightMax: 100, brightHow: 'fit', screenFade: 800, sendMode: 'today',
+    brightMin: SCREEN_DARKEST, brightMax: 100, screenFade: 800, sendMode: 'today', fastTurns: false, aliases: {},
     ...loadJson(SETTINGS_KEY, {}),
   };
   if (!SEND_MODES[settings.sendMode]) settings.sendMode = 'today';
+  settings.fastTurns = settings.fastTurns === true;
+  // The names people gave their lights, by device id.
+  if (!settings.aliases || typeof settings.aliases !== 'object') settings.aliases = {};
+  delete settings.brightHow;
   const wholeIn = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
   if (!wholeIn(settings.brightMin, 1, 100) || !wholeIn(settings.brightMax, settings.brightMin, 100)) {
     Object.assign(settings, { brightMin: SCREEN_DARKEST, brightMax: 100 });
   }
-  if (!BRIGHT_HOW[settings.brightHow]) settings.brightHow = 'fit';
   if (!wholeIn(settings.screenFade, 0, 3000)) settings.screenFade = 800;
   if (!SMOOTHING_LABELS[settings.smoothing]) settings.smoothing = 'smooth';
   if (!PEOPLE.includes(settings.person)) settings.person = '';
@@ -1217,8 +1271,19 @@
     return `#${[r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('')}`;
   }
 
-  function nameOf(d) {
+  // The name the light itself advertises. Logs and sync events always use this one.
+  function realNameOf(d) {
     return (d.device.name || d.advName || 'unnamed device').replace(/\s+/g, ' ');
+  }
+
+  // The name people gave the light in this app, if any.
+  function aliasOf(d) {
+    return settings.aliases[d.device.id] || '';
+  }
+
+  // What the page shows: the person's name for the light, or its own.
+  function nameOf(d) {
+    return aliasOf(d) || realNameOf(d);
   }
 
   function log(msg, level = '') {
@@ -1381,11 +1446,14 @@
         // Only after a manual disconnect; otherwise the page reconnects on its own.
         buttons = `<button class="secondary" data-connect="${id}">Connect</button>`;
       }
+      const slow = d.status === 'connected' && isSlow(d);
       return `<div class="light">
         <div class="info"><span class="dot ${dot}"></span>
-          <div><div class="name">${esc(nameOf(d))}<span class="badge brand">${esc(PROTOCOLS[d.protocol].label)}</span></div>
+          <div><div class="name">${esc(nameOf(d))}<span class="badge brand">${esc(PROTOCOLS[d.protocol].label)}</span>${slow ? '<span class="badge slow">Slow</span>' : ''}</div>
+          ${aliasOf(d) ? `<div class="real-name">${esc(realNameOf(d))}</div>` : ''}
           <div class="status">${text}</div></div></div>
-        <div class="row">${buttons}<button class="link" data-forget="${id}">Forget</button></div>
+        <div class="row">${buttons}<button class="link" data-rename="${id}">Rename</button><button class="link" data-forget="${id}">Forget</button></div>
+        ${healthHtml(d)}
       </div>`;
     }).join('');
   }
@@ -1437,7 +1505,7 @@
   function renderTester() {
     const sel = $('#tester-light');
     const list = controllable();
-    const key = list.map((d) => d.device.id).join(',');
+    const key = list.map((d) => `${d.device.id}=${nameOf(d)}`).join(',');
     if (sel.dataset.key === key) return;
     const prev = sel.value;
     sel.dataset.key = key;
@@ -1559,6 +1627,218 @@
         + `${Math.round(max).toLocaleString()} ms at most · ${skipped.toLocaleString()} skipped</span></div>`;
     });
     box.innerHTML = rows.join('') || '<p class="empty">No lights yet.</p>';
+  }
+
+  // ---- Light health: each light's signal and how fast it answers ----
+  // In the Android app each light's signal strength is read every HEALTH_SAMPLE_MS; on any device,
+  // so is how long its changes took until "done" (the light's "got it" with Confirmed sending).
+  // Lights shows the last 10 minutes of both as small curves, and marks a light that answers much
+  // slower than the others as Slow.
+
+  function healthOf(d) {
+    return d.health || (d.health = { signal: [], response: [] });
+  }
+
+  function keepRecent(list, now) {
+    while (list.length && list[0].at < now - HEALTH_KEEP_MS) list.shift();
+  }
+
+  async function healthTick() {
+    const now = Date.now();
+    lights().forEach((d) => {
+      const s = d.sendStats;
+      const writes = s ? s.writes.filter((w) => w.at > now - HEALTH_SAMPLE_MS) : [];
+      if (!writes.length) return;
+      const h = healthOf(d);
+      h.response.push({ at: now, ms: writes.reduce((sum, w) => sum + w.ms, 0) / writes.length });
+      keepRecent(h.response, now);
+    });
+    const app = window.androidApp;
+    if (app && typeof app.signals === 'function') {
+      try {
+        (await app.signals()).forEach((r) => {
+          const d = devices.get(r.id);
+          if (!d || !Number.isFinite(r.rssi)) return;
+          const h = healthOf(d);
+          h.signal.push({ at: now, rssi: r.rssi });
+          keepRecent(h.signal, now);
+        });
+      } catch { /* no reading this time */ }
+    }
+    queueRender();
+  }
+
+  // Average time until "done" over the last half minute, or null without changes sent.
+  function recentResponse(d, ms = 30000) {
+    const since = Date.now() - ms;
+    const recent = healthOf(d).response.filter((r) => r.at >= since);
+    return recent.length ? recent.reduce((sum, r) => sum + r.ms, 0) / recent.length : null;
+  }
+
+  // Much slower than the other connected lights: SLOW_FACTOR × their median, and over SLOW_MIN_MS.
+  function isSlow(d) {
+    const mine = recentResponse(d);
+    if (mine == null || mine < SLOW_MIN_MS) return false;
+    const others = lights().filter((o) => o !== d && o.status === 'connected').map((o) => recentResponse(o))
+      .filter((v) => v != null).sort((a, b) => a - b);
+    return others.length > 0 && mine > others[Math.floor(others.length / 2)] * SLOW_FACTOR;
+  }
+
+  function signalWord(rssi) {
+    return rssi >= -60 ? 'strong' : rssi >= -75 ? 'good' : rssi >= -85 ? 'weak' : 'very weak';
+  }
+
+  // A small curve of [time, value], newest on the right: since the first reading, at least the last
+  // minute and at most HEALTH_SHOW_MS.
+  function curveSvg(points, lo, hi, colour) {
+    const w = 120;
+    const h = 26;
+    const now = Date.now();
+    const start = Math.min(now - 60000, Math.max(now - HEALTH_SHOW_MS, points[0][0]));
+    const x = (t) => ((w * (t - start)) / (now - start)).toFixed(1);
+    const y = (v) => (h - 2 - ((Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo || 1)) * (h - 4)).toFixed(1);
+    const dot = points.length === 1 ? `<circle cx="${x(points[0][0])}" cy="${y(points[0][1])}" r="2" style="fill: ${colour}"/>` : '';
+    return `<svg viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${points.map(([t, v]) => `${x(t)},${y(v)}`).join(' ')}"
+      fill="none" style="stroke: ${colour}" stroke-width="1.5" stroke-linejoin="round"/>${dot}</svg>`;
+  }
+
+  function healthHtml(d) {
+    const h = healthOf(d);
+    const since = Date.now() - HEALTH_SHOW_MS;
+    const signal = h.signal.filter((r) => r.at >= since);
+    const response = h.response.filter((r) => r.at >= since);
+    if (!signal.length && !response.length) return '';
+    const last = signal.at(-1);
+    const ms = recentResponse(d) ?? response.at(-1)?.ms;
+    const word = d.writeChar && sendHow(d) === 'confirmed' ? 'Answers in' : 'Sent in';
+    return `<div class="health">
+      ${last ? `<span class="curve">${curveSvg(signal.map((r) => [r.at, r.rssi]), -100, -30, 'var(--accent)')}Signal ${last.rssi} dBm (${signalWord(last.rssi)})</span>` : ''}
+      ${response.length ? `<span class="curve">${curveSvg(response.map((r) => [r.at, r.ms]), 0, Math.max(100, ...response.map((r) => r.ms)), 'var(--warn)')}`
+        + `${word} ${Math.round(ms).toLocaleString()} ms</span>` : ''}
+    </div>`;
+  }
+
+  // ---- Renaming lights ----
+  // The name people see everywhere on the page. Logs and sync events keep the light's own name,
+  // with the alias beside it.
+
+  let renaming = null;
+
+  function aliasField(d) {
+    return aliasOf(d) ? { alias: aliasOf(d) } : {};
+  }
+
+  function openRename(id) {
+    const d = devices.get(id);
+    if (!d) return;
+    renaming = id;
+    $('#rename-real').textContent = `Its own name: ${realNameOf(d)} (${PROTOCOLS[d.protocol].label})`;
+    $('#rename-input').value = aliasOf(d);
+    $('#rename-input').placeholder = realNameOf(d);
+    $('#btn-rename-reset').hidden = !aliasOf(d);
+    $('#rename-dialog').showModal();
+    $('#rename-input').focus();
+  }
+
+  function setupRename() {
+    $('#rename-dialog').addEventListener('close', () => {
+      const d = devices.get(renaming);
+      const action = $('#rename-dialog').returnValue;
+      renaming = null;
+      if (!d || (action !== 'save' && action !== 'reset')) return;
+      const name = action === 'save' ? $('#rename-input').value.trim().replace(/\s+/g, ' ').slice(0, 40) : '';
+      if (name && name !== realNameOf(d)) settings.aliases[d.device.id] = name;
+      else delete settings.aliases[d.device.id];
+      saveSettings();
+      logEvent('rename', { light: realNameOf(d), lightId: lightIdOf(d.device.id), ...aliasField(d) });
+      render();
+    });
+  }
+
+  // ---- Faster Bluetooth turns (a setting; Android app v1.8 and later) ----
+  // Asks Android for its shortest connection interval with every light (11–15 ms instead of 30–50),
+  // so each light gets more turns on the phone's radio. Shown in Settings and under Follow my screen.
+
+  function fastTurnsAvailable() {
+    return !!(window.androidApp && typeof window.androidApp.fastTurns === 'function');
+  }
+
+  function applyFastTurns() {
+    if (fastTurnsAvailable()) window.androidApp.fastTurns(settings.fastTurns).catch(() => {});
+  }
+
+  async function renderFastTurns() {
+    const available = fastTurnsAvailable();
+    document.querySelectorAll('[data-fast-turns]').forEach((el) => {
+      el.checked = settings.fastTurns;
+      el.disabled = !available;
+    });
+    document.querySelectorAll('.fast-turns-row').forEach((el) => { el.hidden = !available; });
+    $('.fast-turns-setting').classList.toggle('blocked', !available);
+    $('.fast-turns-setting .needs').textContent = available ? '' : window.androidApp ? 'Needs app v1.8 or later.' : 'Only in the Android app.';
+    let battery = null;
+    try { battery = navigator.getBattery ? await navigator.getBattery() : null; } catch { /* not offered */ }
+    const low = available && settings.fastTurns && battery && battery.level < FAST_TURNS_BATTERY;
+    document.querySelectorAll('.fast-turns-battery').forEach((el) => {
+      el.hidden = !low;
+      if (low) el.textContent = `Battery at ${(battery.level * 100).toFixed(1)}%: faster Bluetooth turns can drain it quicker.`;
+    });
+  }
+
+  function setupFastTurns() {
+    document.querySelectorAll('[data-fast-turns]').forEach((el) => el.addEventListener('change', (e) => {
+      settings.fastTurns = e.target.checked;
+      saveSettings();
+      applyFastTurns();
+      renderFastTurns();
+      log(`Faster Bluetooth turns ${settings.fastTurns ? 'on' : 'off'}.`);
+    }));
+    applyFastTurns();
+    renderFastTurns();
+    if (navigator.getBattery) {
+      navigator.getBattery().then((b) => {
+        b.addEventListener('levelchange', renderFastTurns);
+        b.addEventListener('chargingchange', renderFastTurns);
+      }).catch(() => {});
+    }
+  }
+
+  // ---- Research data ----
+  // FOR RESEARCH ONLY. Manual taps and changes, light drops and heartbeats carry this extra
+  // data in their sync events, so we can learn why a light lags or drops and improve the app:
+  // each light's Bluetooth signal, how fast it answered, what was waiting to be sent, the
+  // Bluetooth settings in use, and how the phone was held (the app's position readings). It's
+  // about the lights and the phone's radio, nothing else.
+
+  function researchNow() {
+    const now = Date.now();
+    return {
+      sending: settings.sendMode,
+      fastTurns: settings.fastTurns,
+      lights: lights().map((d) => {
+        const s = d.sendStats;
+        const writes = s ? s.writes.filter((w) => w.at >= now - SEND_STATS_MS) : [];
+        const signal = healthOf(d).signal.at(-1);
+        return {
+          light: realNameOf(d), ...aliasField(d), lightId: lightIdOf(d.device.id), status: d.status,
+          ...(signal ? { rssi: signal.rssi, rssiAgeMs: now - signal.at } : {}),
+          writes: writes.length,
+          ...(writes.length ? { avgMs: Math.round(writes.reduce((sum, w) => sum + w.ms, 0) / writes.length), maxMs: Math.round(Math.max(...writes.map((w) => w.ms))) } : {}),
+          skipped: s ? s.skips.filter((t) => t >= now - SEND_STATS_MS).length : 0,
+          waiting: d.pending ? d.pending.size : 0,
+          ...(d.writeChar ? { how: sendHow(d) } : {}),
+          ...(isSlow(d) ? { slow: true } : {}),
+        };
+      }),
+      ...(usageLog.pose ? { pose: usageLog.pose } : {}),
+    };
+  }
+
+  // FOR RESEARCH ONLY: one light's signal and answer time, for its drop and return events.
+  function lightResearch(d) {
+    const signal = healthOf(d).signal.at(-1);
+    const ms = recentResponse(d);
+    return { research: { ...(signal ? { rssi: signal.rssi, rssiAgeMs: Date.now() - signal.at } : {}), ...(ms != null ? { avgMs: Math.round(ms) } : {}), sending: settings.sendMode, fastTurns: settings.fastTurns } };
   }
 
   function dropLive(d) {
@@ -2093,8 +2373,9 @@
   }));
 
   document.addEventListener('click', (e) => {
-    const el = e.target.closest('[data-connect], [data-disconnect], [data-power], [data-forget]');
+    const el = e.target.closest('[data-connect], [data-disconnect], [data-power], [data-forget], [data-rename]');
     if (!el) return;
+    if (el.dataset.rename) openRename(el.dataset.rename);
     if (el.dataset.connect) {
       const d = devices.get(el.dataset.connect);
       if (d) d.retryDelay = 0;
@@ -4225,19 +4506,18 @@
     screenFollow.heardAt = Date.now();
   }
 
-  // The lights' brightness for a screen brightness: the screen's squeezed into this device's range
-  // (`fit`) or cut off at its edges (`cut`). With "Follow the screen's brightness" off, the
+  // The lights' brightness for a screen brightness: the screen's squeezed into this device's range.
+  // With "Follow the screen's brightness" off, the
   // brightness from when following began is used, kept inside the range too.
   function followBrightness(screenB) {
     const { brightMin: lo, brightMax: hi } = settings;
     const within = (v) => Math.min(hi, Math.max(lo, v));
     if (!$('#screen-bright').checked) return within(screenFollow.brightness);
     const b = Math.min(100, Math.max(1, screenB));
-    if (settings.brightHow === 'cut') return within(b);
     return lo + (Math.max(0, b - SCREEN_DARKEST) / (100 - SCREEN_DARKEST)) * (hi - lo);
   }
 
-  // After a change to the range, how it's applied or the tick box: saved, and while following the
+  // After a change to the range or the tick box: saved, and while following the
   // lights fade to the new brightness over Smoothness.
   function brightRangeChanged() {
     saveSettings();
@@ -4251,7 +4531,7 @@
   }
 
   function renderBrightRange() {
-    const { brightMin: lo, brightMax: hi, brightHow } = settings;
+    const { brightMin: lo, brightMax: hi } = settings;
     $('#bright-min').value = String(lo);
     $('#bright-max').value = String(hi);
     // Where the handles meet, the one that can still move goes on top: the lower one near the top end.
@@ -4260,8 +4540,6 @@
     $('#bright-range').style.setProperty('--lo', `${((lo - 1) / 99) * 100}%`);
     $('#bright-range').style.setProperty('--hi', `${((hi - 1) / 99) * 100}%`);
     $('#bright-range-value').textContent = `${lo.toFixed(1)}% – ${hi.toFixed(1)}%`;
-    document.querySelectorAll('#bright-how [data-how]').forEach((chip) => chip.classList.toggle('active', chip.dataset.how === brightHow));
-    $('#bright-how-hint').textContent = BRIGHT_HOW[brightHow];
   }
 
   // While following: what the screen sent and what the lights get.
@@ -4366,12 +4644,6 @@
       settings.brightMax = Math.max(Number(e.target.value), settings.brightMin);
       brightRangeChanged();
     });
-    $('#bright-how').addEventListener('click', (e) => {
-      const chip = e.target.closest('[data-how]');
-      if (!chip) return;
-      settings.brightHow = chip.dataset.how;
-      brightRangeChanged();
-    });
     $('#screen-bright').addEventListener('change', brightRangeChanged);
     renderBrightRange();
     // Phones can't share their screen; the computer side is for Chrome or Edge on a computer.
@@ -4445,7 +4717,7 @@
 
   const usageLog = {
     queue: [], outbox: [], timer: null, waitingSince: 0, sending: false, device: null,
-    wheelFrom: null, batteryWarning: false, awayAt: 0, lastSentAt: 0, lastError: '',
+    wheelFrom: null, batteryWarning: false, unrestricted: true, backgroundRestricted: false, setupTimer: 0, pose: null, awayAt: 0, lastSentAt: 0, lastError: '',
     // The connected lights (id → name), when each one dropped, and when the last one went.
     up: new Map(), downAt: new Map(), allDownAt: 0,
   };
@@ -4581,7 +4853,7 @@
     const where = el.parentElement && el.parentElement.closest('[id]');
     const data = Object.entries(el.dataset).map(([k, v]) => {
       const light = devices.get(v);
-      return `${k}=${light ? nameOf(light) : v}`;
+      return `${k}=${light ? realNameOf(light) : v}`;
     }).join(' ');
     return `${where ? `${where.id} ` : ''}${data || el.tagName.toLowerCase()}`.slice(0, 80);
   }
@@ -4614,7 +4886,7 @@
       const d = devices.get(id);
       usageLog.downAt.set(id, now);
       // manual: disconnected or forgotten on purpose, rather than dropped.
-      logEvent('light_down', { light: name, lightId: lightIdOf(id), connected: up.size, of, manual: !d || !d.wanted });
+      logEvent('light_down', { light: name, ...(d ? aliasField(d) : {}), lightId: lightIdOf(id), connected: up.size, of, manual: !d || !d.wanted, ...(d ? lightResearch(d) : {}) });
     });
     let cameBack = false;
     up.forEach((d, id) => {
@@ -4622,7 +4894,7 @@
       cameBack = true;
       const downAt = usageLog.downAt.get(id);
       usageLog.downAt.delete(id);
-      logEvent('light_up', { light: nameOf(d), lightId: lightIdOf(id), connected: up.size, of, ...(downAt ? { downFor: now - downAt } : {}) });
+      logEvent('light_up', { light: realNameOf(d), ...aliasField(d), lightId: lightIdOf(id), connected: up.size, of, ...(downAt ? { downFor: now - downAt } : {}), ...lightResearch(d) });
     });
     if (was.size && !up.size && of) {
       usageLog.allDownAt = now;
@@ -4632,31 +4904,33 @@
       logEvent('all_up', { of, ...(usageLog.allDownAt ? { downFor: now - usageLog.allDownAt } : {}) });
       usageLog.allDownAt = 0;
     }
-    usageLog.up = new Map([...up].map(([id, d]) => [id, nameOf(d)]));
+    usageLog.up = new Map([...up].map(([id, d]) => [id, realNameOf(d)]));
   }
 
-  // Only in the Android app (v1.3 and later): while battery saving holds the app's internet in the
-  // background, a red warning at the top asks for Unrestricted. It appearing and going away are
-  // sync events, so a computer can show it too.
-  async function renderBatteryWarning() {
+  // Only in the Android app (v1.3 and later): until battery use is Unrestricted and background
+  // usage is allowed (app v1.8 checks that too), the setup block covers the whole app, with no way
+  // past it. It appearing and going away are sync events (`battery_warning`), so a computer can
+  // show it too.
+  async function renderSetupBlock() {
     const app = window.androidApp;
     if (!app || typeof app.batteryUnrestricted !== 'function') return;
     let unrestricted = false;
+    let backgroundRestricted = false;
     try { unrestricted = await app.batteryUnrestricted(); } catch { /* treated as restricted */ }
-    const shown = !unrestricted;
-    $('#battery-banner').hidden = !shown;
-    if (shown !== usageLog.batteryWarning) logEvent('battery_warning', { shown });
-    usageLog.batteryWarning = shown;
-  }
-
-  // The app tells the page it's always on screen, so nothing says when the person comes back from
-  // Android's settings: check again every 2 s for half a minute.
-  function recheckBattery() {
-    let left = 15;
-    const timer = setInterval(() => {
-      renderBatteryWarning();
-      if (--left <= 0) clearInterval(timer);
-    }, 2000);
+    if (typeof app.backgroundRestricted === 'function') {
+      try { backgroundRestricted = await app.backgroundRestricted(); } catch { /* treated as allowed */ }
+    }
+    const shown = !unrestricted || backgroundRestricted;
+    $('#setup-block').hidden = !shown;
+    $('#block-battery').hidden = unrestricted;
+    $('#block-background').hidden = !backgroundRestricted;
+    document.body.style.overflow = shown ? 'hidden' : '';
+    if (shown !== usageLog.batteryWarning) logEvent('battery_warning', { shown, unrestricted, backgroundRestricted });
+    Object.assign(usageLog, { batteryWarning: shown, unrestricted, backgroundRestricted });
+    // The app tells the page it's always on screen, so nothing says when the person comes back from
+    // Android's settings: while the block is up, look again every 2 s.
+    clearTimeout(usageLog.setupTimer);
+    if (shown) usageLog.setupTimer = setTimeout(renderSetupBlock, 2000);
   }
 
   // The heartbeat: how this device is doing right now. `waiting` growing while `lastSentAt` stays
@@ -4671,7 +4945,7 @@
     const sent = all.filter((d) => d.sendStats && (d.sendStats.beat.writes || d.sendStats.beat.skipped)).map((d) => {
       const b = d.sendStats.beat;
       d.sendStats.beat = { writes: 0, ms: 0, maxMs: 0, skipped: 0 };
-      return { light: nameOf(d), lightId: lightIdOf(d.device.id), how: d.writeChar ? sendHow(d) : settings.sendMode,
+      return { light: realNameOf(d), ...aliasField(d), lightId: lightIdOf(d.device.id), how: d.writeChar ? sendHow(d) : settings.sendMode,
         writes: b.writes, avgMs: b.writes ? Math.round(b.ms / b.writes) : 0, maxMs: Math.round(b.maxMs), skipped: b.skipped };
     });
     logEvent('heartbeat', {
@@ -4687,7 +4961,9 @@
       mode,
       sending: settings.sendMode,
       ...(sent.length ? { sent } : {}),
-      ...(app && typeof app.batteryUnrestricted === 'function' ? { unrestricted: !usageLog.batteryWarning } : {}),
+      ...(app && typeof app.batteryUnrestricted === 'function' ? { unrestricted: usageLog.unrestricted, backgroundRestricted: usageLog.backgroundRestricted } : {}),
+      // FOR RESEARCH ONLY: every light's Bluetooth state and the phone's position right now.
+      research: researchNow(),
     });
   }
 
@@ -4704,7 +4980,7 @@
     const awayFor = usageLog.awayAt ? Date.now() - usageLog.awayAt : undefined;
     usageLog.awayAt = 0;
     logEvent('foreground', awayFor !== undefined ? { awayFor } : {});
-    renderBatteryWarning();
+    renderSetupBlock();
   }
 
   function setupUsageLog() {
@@ -4716,7 +4992,8 @@
     // Capture phase, so it's logged even when the control's own handler stops the event.
     document.addEventListener('click', (e) => {
       const el = e.isTrusted && e.target.closest('button, summary, a[href]');
-      if (el) logEvent('tap', { control: controlOf(el), label: labelOf(el), mode });
+      // `research`: FOR RESEARCH ONLY, see researchNow().
+      if (el) logEvent('tap', { control: controlOf(el), label: labelOf(el), mode, research: researchNow() });
     }, true);
     document.addEventListener('change', (e) => {
       const el = e.target;
@@ -4726,7 +5003,7 @@
       if (el.type === 'checkbox') value = el.checked;
       else if (el.type === 'range' || el.type === 'number') value = Number(el.value);
       else if (el.type === 'color' || el.tagName === 'SELECT') value = el.value;
-      logEvent('set', { control: controlOf(el), label: labelOf(el), ...(value !== undefined ? { value } : {}), mode });
+      logEvent('set', { control: controlOf(el), label: labelOf(el), ...(value !== undefined ? { value } : {}), mode, research: researchNow() });
     }, true);
     // The colour wheel: one entry per drag, from where it started to where it ended.
     const wheel = $('#wheel');
@@ -4739,18 +5016,23 @@
       logEvent('set', {
         control: 'wheel', label: 'Colour wheel', value: to.colour, from: from.colour,
         ...(from.brightness !== to.brightness ? { brightness: to.brightness, brightnessFrom: from.brightness } : {}), mode,
+        research: researchNow(),
       });
     };
     wheel.addEventListener('pointerup', wheelDone, true);
     wheel.addEventListener('pointercancel', wheelDone, true);
-    $('#btn-battery-banner').addEventListener('click', () => {
+    $('#btn-block-battery').addEventListener('click', () => {
       window.androidApp.askBatteryUnrestricted().catch(() => {});
-      recheckBattery();
+      renderSetupBlock();
+    });
+    $('#btn-block-background').addEventListener('click', () => {
+      window.androidApp.openAppSettings().catch(() => {});
+      renderSetupBlock();
     });
     // Changed in Android's settings at any time, so checked now and every half minute.
     if (window.androidApp && typeof window.androidApp.batteryUnrestricted === 'function') {
-      renderBatteryWarning();
-      setInterval(renderBatteryWarning, 30000);
+      renderSetupBlock();
+      setInterval(renderSetupBlock, 30000);
     }
     window.addEventListener('pagehide', saveLog);
     // A browser says when the tab is hidden or shown. In the Android app the page always counts as
@@ -4765,6 +5047,11 @@
     window.addEventListener('androidsyncevent', (e) => {
       const { type, ...details } = e.detail || {};
       if (['position', 'motion', 'tilt', 'signal', 'ble_scan'].includes(type)) logEvent(type, details);
+      // FOR RESEARCH ONLY: the phone's latest position, added to research data (researchNow()).
+      if (['position', 'motion', 'tilt'].includes(type) && details.face) {
+        const { face, pitch, roll, heading, q, at } = details;
+        usageLog.pose = { face, pitch, roll, heading, q, at };
+      }
     });
     window.addEventListener('androidappstate', (e) => {
       const { state, reason } = e.detail || {};
@@ -5054,6 +5341,9 @@
   setupSequenceEditor();
   setupScreenSync();
   setupSettings();
+  setupRename();
+  setupFastTurns();
+  setInterval(healthTick, HEALTH_SAMPLE_MS);
   setupUsageLog();
   setupCollapsibles();
   let savedTab = null;

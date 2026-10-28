@@ -229,19 +229,20 @@ Every event has `type` and `at` (when, in ms).
 | `open` | A fresh start: the app launched from closed, or the website page loaded | none |
 | `background` | The app went to the background, or the browser tab was hidden | `reason`: `left_app` (home or another app), `screen_off`, `closing`, or `tab_hidden` in a browser |
 | `foreground` | Came back to the app (or tab) while it was still running | `awayFor` (ms): how long it was in the background |
-| `tap` | A person tapped a button, tab or section header | `control`, `label`, `mode` |
-| `set` | A person changed a slider, colour, tick box or list. Logged once, when the finger lifts | `control`, `label`, `value`, `mode`. The colour wheel adds `from`, and `brightness` and `brightnessFrom` if the ring moved |
-| `light_down` | A light stopped being connected | `light`, `lightId`, `connected`, `of`, `manual` |
-| `light_up` | A light connected | `light`, `lightId`, `connected`, `of`, and `downFor` (ms) if it had dropped since the page opened |
+| `tap` | A person tapped a button, tab or section header | `control`, `label`, `mode`; from website v2.9, `research` (for research only): `sending`, `fastTurns`, `lights` (per light: `light`, `alias`, `lightId`, `status`, `rssi`, `rssiAgeMs`, `writes`, `avgMs`, `maxMs`, `skipped`, `waiting`, `how`, `slow`) and `pose` (the phone's last `face`, `pitch`, `roll`, `heading`, `q`, `at`) |
+| `set` | A person changed a slider, colour, tick box or list. Logged once, when the finger lifts | `control`, `label`, `value`, `mode`. The colour wheel adds `from`, and `brightness` and `brightnessFrom` if the ring moved. From website v2.9, `research` as for `tap` |
+| `light_down` | A light stopped being connected | `light` (its own name), `alias` (if renamed), `lightId`, `connected`, `of`, `manual`; from website v2.9, `research` (`rssi`, `rssiAgeMs`, `avgMs`, `sending`, `fastTurns`) |
+| `light_up` | A light connected | `light`, `alias`, `lightId`, `connected`, `of`, and `downFor` (ms) if it had dropped since the page opened; `research` as for `light_down` |
+| `rename` | A person renamed a light (website v2.9) | `light` (its own name), `lightId`, `alias` (missing when set back to its own name) |
 | `all_down` | The last connected light went | `of`, `manual` |
 | `all_up` | Every light is connected | `of`, and `downFor` (ms) if they had all been down |
-| `heartbeat` | Every 5 minutes (the first 30 s after opening), even when nothing happened, from every device (website v2.6+) | `foreground`, `lights` and `of` (connected of added), `battery` (%) and `charging` where the browser tells, `online`, `network` (for example `4g`), `waiting` (events not sent yet), `lastSentAt` (last batch that reached Firebase), `lastError` (why the last send failed), `mode`, `unrestricted` (app only: battery saving off); from website v2.8, `sending` (the Bluetooth sending setting: `today`, `confirmed` or `throttled`) and `sent`, one row per light since the last heartbeat: `light`, `lightId`, `how`, `writes`, `avgMs` and `maxMs` (time until each write was done), `skipped` (changes replaced by a newer one before they went out) |
+| `heartbeat` | Every 5 minutes (the first 30 s after opening), even when nothing happened, from every device (website v2.6+) | `foreground`, `lights` and `of` (connected of added), `battery` (%) and `charging` where the browser tells, `online`, `network` (for example `4g`), `waiting` (events not sent yet), `lastSentAt` (last batch that reached Firebase), `lastError` (why the last send failed), `mode`, `unrestricted` (app only: battery saving off); from website v2.8, `sending` (the Bluetooth sending setting: `today`, `confirmed` or `throttled`) and `sent`, one row per light since the last heartbeat: `light`, `lightId`, `how`, `writes`, `avgMs` and `maxMs` (time until each write was done), `skipped` (changes replaced by a newer one before they went out); from website v2.9, `backgroundRestricted` (app only) and `research` as for `tap` |
 | `position` | Android app v1.7+: where the phone is, once soon after launch | `face` (`face_up`, `upright`, `face_down`, `upside_down`, `left_side`, `right_side`), `pitch`, `roll`, `heading` (degrees, 0 = north), `q` (the 3D rotation as 4 numbers), `signal` |
 | `motion` | Android app v1.7+: one movement, from when the phone starts turning (2° or more) to when it has been still for 1.5 s. A quick look at a notification counts, even if the phone ends where it started. Movements longer than a minute come in one-minute pieces | `from` (when it started), `seconds`, `maxDegrees` (largest swing), `netDegrees` (start to end), `startFace`, then the end position as in `position`, `path` (`{at, q}`: a reading every half second or every 1° turned, up to 120), `ongoing` (a piece of a longer movement), `signal` |
 | `tilt` | Android app v1.6 only (replaced by `position` and `motion`): the phone turned more than 10° since the last one (at most once a minute) | `face` (`face_up`, `upright`, `face_down`, `upside_down`, `left_side`, `right_side`), `pitch`, `roll`, `heading` (degrees, `heading` 0 = north), `q` (the 3D rotation as 4 numbers), `path` (that minute's readings, `{at, q}` every 5 s while it moved), `signal` |
 | `signal` | Android app v1.6+: only the lights' signal changed (by 5 dBm or more) in a minute | `signal`: `[{ light, id, rssi }]`, `rssi` in dBm (closer to 0 is stronger) |
 | `ble_scan` | Android app v1.6+: a 10-second scan for nearby Bluetooth devices, every 5 minutes and after a light drops (screen on only) | `seconds`, `reason` (`timer` or `light_drop`), `devices`: up to 100 of `{ address, name, rssi, maker, makerId, kind, rotating, connectable, yours }` |
-| `battery_warning` | Android app only: the red "Battery saving is holding the app back" warning appeared (`shown: true`) or went away once battery was set to Unrestricted (`shown: false`) | `shown` |
+| `battery_warning` | Android app only: the setup block (a red warning before website v2.9) appeared (`shown: true`) or went away once Android allowed the app to run in the background (`shown: false`) | `shown`; from website v2.9, `unrestricted` and `backgroundRestricted` |
 
 What the fields mean:
 
@@ -520,7 +521,8 @@ Everything is in [index.html](index.html). Search for these names:
 | `flushLog()`, `sendLog()` | Pack waiting events into batches, then write each as a new document |
 | `logLights()` | Spots lights dropping and coming back (called on every render request) |
 | `setupUsageLog()` | The tap and change listeners (trusted only), the colour wheel and the battery warning |
-| `renderBatteryWarning()` | Android app: shows or hides the red battery warning, and logs `battery_warning` when it changes |
+| `renderSetupBlock()` | Android app: shows or hides the full-screen setup block (battery Unrestricted, background usage allowed), and logs `battery_warning` when it changes |
+| `researchNow()`, `lightResearch()` | FOR RESEARCH ONLY: the per-light Bluetooth data and phone position added to sync events |
 | `logDevice()`, `detailLogDevice()` | The `device` map |
 
 Related reading:
