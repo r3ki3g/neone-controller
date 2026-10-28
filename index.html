@@ -213,6 +213,9 @@
     details ol { padding-left: 20px; margin-bottom: 0; }
     details li { margin-bottom: 6px; }
     .empty { color: var(--muted); font-size: .9rem; margin-top: 10px; }
+    .send-stat { padding: 8px 0; border-top: 1px solid var(--border); word-break: break-word; }
+    .send-stat:first-child { border-top: 0; }
+    #send-mode-desc { margin: 8px 0 0; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -707,6 +710,10 @@
       <input id="extra-uuids" placeholder="fff0, ffe0, …" autocomplete="off" spellcheck="false">
       <div id="devices"><p class="empty">No devices yet.</p></div>
 
+      <h2 style="margin-top: 16px">Bluetooth sending</h2>
+      <p id="send-stats-mode" class="hint"></p>
+      <div id="send-stats"></div>
+
       <h2 style="margin-top: 16px">Command tester</h2>
       <p class="hint">Send one scene number or raw bytes to a single light, to see what an unnamed scene looks like or to try commands that haven't been decoded.</p>
       <label for="tester-light">Light</label>
@@ -753,6 +760,13 @@
       <p class="hint">Everything is on by default. Turn off what you don't use for a simpler app.
         A feature that needs another one is greyed out while that one is off.</p>
       <div id="feature-list"></div>
+      <details class="section" data-collapse="settings-sending" open>
+        <summary>Bluetooth sending</summary>
+        <p class="hint">How colour and brightness changes go to each light, for comparing which keeps every light in step.
+          Diagnostics shows how each light keeps up.</p>
+        <div id="send-mode" class="chips"></div>
+        <p id="send-mode-desc" class="hint"></p>
+      </details>
     </section>
   </div>
 
@@ -818,7 +832,7 @@
   const PAIRED_KEY = 'led-lights-paired-before';
   // Bumped with every change to this page. Shown under the title, because GitHub Pages takes a
   // few minutes to publish an update.
-  const PAGE_VERSION = '2.7';
+  const PAGE_VERSION = '2.8';
   // Screen colour sync goes through Firestore, so no server of our own. Everything below is an
   // identifier that grants nothing on its own; the apiKey is pasted once on each device and kept in
   // that browser, as in Gym notes. Never run `firebase deploy`: Firebase Hosting would publish the
@@ -904,6 +918,19 @@
   // One-off commands are written with a delivery confirmation; slider and music streams aren't,
   // so they never wait. Without it, a light can silently drop a command sent amid a burst of others.
   const CONFIRMED_KINDS = new Set(['power', 'mode', 'mic']);
+  // Bluetooth sending (a setting, for comparing): how everything else goes out. Without a
+  // response, "done" only means the phone's Bluetooth took it, so a light with a weak signal can
+  // fall behind and replay old colours in order. Confirmed waits for each light's "got it", and
+  // Throttled spaces writes THROTTLE_MS apart; with both, newer changes replace older ones while a
+  // light waits. See bluetooth-lag-gorilla.md.
+  const SEND_MODES = {
+    today: { name: 'As today', desc: "Colour and brightness go out as fast as the phone takes them. \"Done\" only means they're in the phone's Bluetooth outbox, so a light with a weak signal can fall behind and replay old colours." },
+    confirmed: { name: 'Confirmed', desc: "Each light confirms every change before it gets the next one, and newer changes replace older ones while it waits, so a slow light skips to the newest colour. A light that can't confirm is throttled instead." },
+    throttled: { name: 'Throttled', desc: 'At most 10 changes a second to each light, and newer changes replace older ones while it waits.' },
+  };
+  const THROTTLE_MS = 100;
+  // Diagnostics shows how each light kept up over this long.
+  const SEND_STATS_MS = 10000;
   // Dimmer rim: angles clockwise from 12 o'clock. Min at 210° (bottom left), Max 300° further round.
   // Brightness runs 1–100: the rim never switches the lights off.
   const RIM_START = 210;
@@ -1073,9 +1100,10 @@
   const settings = {
     wheel: false, smoothing: 'smooth', speed: 1, repeat: false, repeatAll: false,
     person: '', screenEvery: 3000, screenGap: 1, screenScan: 10, flowMaths: true, features: {}, collapsed: {},
-    brightMin: SCREEN_DARKEST, brightMax: 100, brightHow: 'fit', screenFade: 800,
+    brightMin: SCREEN_DARKEST, brightMax: 100, brightHow: 'fit', screenFade: 800, sendMode: 'today',
     ...loadJson(SETTINGS_KEY, {}),
   };
+  if (!SEND_MODES[settings.sendMode]) settings.sendMode = 'today';
   const wholeIn = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
   if (!wholeIn(settings.brightMin, 1, 100) || !wholeIn(settings.brightMax, settings.brightMin, 100)) {
     Object.assign(settings, { brightMin: SCREEN_DARKEST, brightMax: 100 });
@@ -1427,6 +1455,8 @@
   // levels, tester) are never kept for a light that drops out.
   function send(d, kind, bytes, live = false) {
     d.pending = d.pending || new Map();
+    // A change replaced before it went out to a connected light was skipped.
+    if (d.pending.has(kind) && d.writeChar) noteSkip(d);
     d.pending.delete(kind);
     d.pending.set(kind, { bytes, at: Date.now(), live });
     if (d.writeChar) {
@@ -1440,6 +1470,12 @@
     d.flushing = true;
     try {
       while (d.pending && d.pending.size && d.writeChar) {
+        // Throttled: the wait comes first, so whatever is newest by then is what goes out.
+        const wait = (d.lastWriteAt || 0) + (sendHow(d) === 'throttled' ? THROTTLE_MS : 0) - Date.now();
+        if (wait > 0) {
+          await new Promise((resolve) => setTimeout(resolve, wait));
+          continue;
+        }
         const [kind, entry] = d.pending.entries().next().value;
         d.pending.delete(kind);
         if (Date.now() - entry.at > PENDING_MAX_MS) {
@@ -1447,13 +1483,15 @@
           continue;
         }
         const packets = Array.isArray(entry.bytes[0]) ? entry.bytes : [entry.bytes];
+        const started = performance.now();
         try {
-          const confirm = CONFIRMED_KINDS.has(kind) && d.writeChar.properties.write;
+          const confirm = (CONFIRMED_KINDS.has(kind) || sendHow(d) === 'confirmed') && d.writeChar.properties.write;
           for (const bytes of packets) {
             const data = new Uint8Array(bytes);
             if (!confirm && d.writeChar.properties.writeWithoutResponse) await d.writeChar.writeValueWithoutResponse(data);
             else await d.writeChar.writeValueWithResponse(data);
           }
+          noteWrite(d, performance.now() - started);
           if (!entry.live) d.missed = false;
           if (kind === 'power' || kind === 'test') log(`${nameOf(d)}: ${kind} sent [${packets.map(hex).join(' | ')}]`, 'ok');
         } catch (err) {
@@ -1464,10 +1502,63 @@
             break;
           }
         }
+        d.lastWriteAt = Date.now();
       }
     } finally {
       d.flushing = false;
     }
+  }
+
+  // How changes go to this light: the Bluetooth sending setting, except that a light that can't
+  // confirm writes is throttled instead of confirmed.
+  function sendHow(d) {
+    if (settings.sendMode === 'confirmed' && !(d.writeChar && d.writeChar.properties.write)) return 'throttled';
+    return settings.sendMode;
+  }
+
+  // Per light, for Diagnostics and the heartbeat: how long each write took until "done", and the
+  // changes replaced before they went out. `beat` adds up since the last heartbeat.
+  function sendStats(d) {
+    return d.sendStats || (d.sendStats = { writes: [], skips: [], beat: { writes: 0, ms: 0, maxMs: 0, skipped: 0 } });
+  }
+
+  function noteWrite(d, ms) {
+    const s = sendStats(d);
+    const now = Date.now();
+    s.writes.push({ at: now, ms });
+    while (s.writes[0].at < now - SEND_STATS_MS) s.writes.shift();
+    s.beat.writes++;
+    s.beat.ms += ms;
+    s.beat.maxMs = Math.max(s.beat.maxMs, ms);
+  }
+
+  function noteSkip(d) {
+    const s = sendStats(d);
+    const now = Date.now();
+    s.skips.push(now);
+    while (s.skips[0] < now - SEND_STATS_MS) s.skips.shift();
+    s.beat.skipped++;
+  }
+
+  // Diagnostics: how each light kept up over the last 10 seconds, while it's open.
+  function renderSendStats() {
+    const box = $('#send-stats');
+    if ($('#diagnostics').hidden || !box.closest('details').open) return;
+    $('#send-stats-mode').textContent = `${SEND_MODES[settings.sendMode].name} (Settings → Bluetooth sending). Over the last 10 s, per light: `
+      + 'changes sent, how long until each was done, and changes replaced by a newer one before they went out.';
+    const now = Date.now();
+    const rows = lights().filter((d) => d.writeChar || d.sendStats).map((d) => {
+      const s = sendStats(d);
+      const writes = s.writes.filter((w) => w.at >= now - SEND_STATS_MS);
+      const skipped = s.skips.filter((t) => t >= now - SEND_STATS_MS).length;
+      const avg = writes.length ? writes.reduce((sum, w) => sum + w.ms, 0) / writes.length : 0;
+      const max = writes.reduce((m, w) => Math.max(m, w.ms), 0);
+      const how = d.writeChar ? SEND_MODES[sendHow(d)].name.toLowerCase() : 'not connected';
+      return `<div class="send-stat"><b>${esc(nameOf(d))}</b> <span class="hint">(${esc(how)})</span><br><span class="hint">`
+        + `${(writes.length / (SEND_STATS_MS / 1000)).toFixed(1)} a second · done in ${Math.round(avg).toLocaleString()} ms on average, `
+        + `${Math.round(max).toLocaleString()} ms at most · ${skipped.toLocaleString()} skipped</span></div>`;
+    });
+    box.innerHTML = rows.join('') || '<p class="empty">No lights yet.</p>';
   }
 
   function dropLive(d) {
@@ -4576,6 +4667,13 @@
     try { battery = navigator.getBattery ? await navigator.getBattery() : null; } catch { /* not offered */ }
     const net = navigator.connection && navigator.connection.effectiveType;
     const app = window.androidApp;
+    // How each light kept up since the last heartbeat, to compare the Bluetooth sending settings.
+    const sent = all.filter((d) => d.sendStats && (d.sendStats.beat.writes || d.sendStats.beat.skipped)).map((d) => {
+      const b = d.sendStats.beat;
+      d.sendStats.beat = { writes: 0, ms: 0, maxMs: 0, skipped: 0 };
+      return { light: nameOf(d), lightId: lightIdOf(d.device.id), how: d.writeChar ? sendHow(d) : settings.sendMode,
+        writes: b.writes, avgMs: b.writes ? Math.round(b.ms / b.writes) : 0, maxMs: Math.round(b.maxMs), skipped: b.skipped };
+    });
     logEvent('heartbeat', {
       foreground: !usageLog.awayAt,
       lights: all.filter((d) => d.status === 'connected').length,
@@ -4587,6 +4685,8 @@
       lastSentAt: usageLog.lastSentAt || null,
       ...(usageLog.lastError ? { lastError: usageLog.lastError } : {}),
       mode,
+      sending: settings.sendMode,
+      ...(sent.length ? { sent } : {}),
       ...(app && typeof app.batteryUnrestricted === 'function' ? { unrestricted: !usageLog.batteryWarning } : {}),
     });
   }
@@ -4779,6 +4879,11 @@
     else if (view !== 'settings') requestAnimationFrame(drawAllRibbons);
   }
 
+  function renderSendMode() {
+    document.querySelectorAll('#send-mode [data-send-mode]').forEach((chip) => chip.classList.toggle('active', chip.dataset.sendMode === settings.sendMode));
+    $('#send-mode-desc').textContent = SEND_MODES[settings.sendMode].desc;
+  }
+
   function setupSettings() {
     renderFeatureList();
     updateFeatureList();
@@ -4790,6 +4895,17 @@
       updateFeatureList();
       applyFeatures();
     });
+    $('#send-mode').innerHTML = Object.entries(SEND_MODES)
+      .map(([key, m]) => `<button class="chip" data-send-mode="${key}">${esc(m.name)}</button>`).join('');
+    $('#send-mode').addEventListener('click', (e) => {
+      const chip = e.target.closest('[data-send-mode]');
+      if (!chip) return;
+      settings.sendMode = chip.dataset.sendMode;
+      saveSettings();
+      renderSendMode();
+      log(`Bluetooth sending: ${SEND_MODES[settings.sendMode].name}.`);
+    });
+    renderSendMode();
     $('#btn-settings').addEventListener('click', () => openView('settings'));
     $('#btn-settings-back').addEventListener('click', closeView);
     window.addEventListener('hashchange', showView);
@@ -4925,6 +5041,7 @@
   // Once a second: drop changes that waited too long, and refresh the countdowns.
   setInterval(() => {
     expirePending();
+    renderSendStats();
     if (syncActive || lights().some(waitingFor)) queueRender();
   }, 1000);
 
