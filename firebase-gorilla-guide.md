@@ -58,7 +58,8 @@ That's all of it. There are three kinds of document:
     │   ├── live                   ← subcollection
     │   │   └── screen             ← document: the latest screen colour (always 1, overwritten)
     │   ├── config                 ← subcollection
-    │   │   └── screen             ← document: colour tuning presets (always 1, overwritten)
+    │   │   ├── screen             ← document: colour tuning presets (always 1, overwritten)
+    │   │   └── colours            ← document: saved colours (always 1, overwritten; website v3.0)
     │   └── mobile_and_desktop_sync_events   ← subcollection: sync events (grows, 1 new document per batch)
     │       ├── 1793045700000-d557dzsn3-k2f9
     │       ├── 1793045763000-d557dzsn3-x8qa
@@ -175,6 +176,18 @@ In this example, Cyan is set to 0 (`boost[6]`), so cyan is ignored. If there's n
 - **A new id is `p` + the current time in base 36**, for example `p` + `mvpp44o0`. Unique enough for one person's 20 presets.
 - **The whole document is saved every time**, with all presets in it, not just the one you changed.
 - **The app checks everything it reads back** (`cleanPreset` in [index.html](index.html)). A bad value, like a boost of 99, is clamped to its range. Anyone with the access key could write this document, so it doesn't trust what it reads.
+
+### Saved colours: `users/<name>/config/colours` (website v3.0)
+
+"Your colours" under the Colour tab's default colours. One document per person, overwritten on every save or removal, shared by all of that person's devices.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `colours` | list, up to 24 | `{ id, name, h (0–359), s (0–1,000) }`: hue and paleness only, never brightness |
+| `t` | number | When it was last saved (ms) |
+
+- **Without the access key** the colours stay in that browser (`led-lights-colours`); the first time a person is picked, they become that person's.
+- **Checked on read** (`cleanColours`), like presets. The rules only allow the two fields and at most 24 colours, so **the rules must be published again** for website v3.0.
 
 ---
 
