@@ -867,6 +867,18 @@
             lights may refuse it.</span><span class="needs"></span>
             <span class="hint fast-turns-battery err" hidden></span></span>
         </label>
+        <label class="feature">
+          <input type="checkbox" data-setting="lagReconnect">
+          <span><span class="feature-name">Reconnect a light that falls behind</span><span class="hint feature-desc">When one light answers
+            much slower than the others (over 0.5 s, and 3× theirs) for a few seconds, it's reconnected to get a fresh turn on the phone's
+            radio. Answers are only timed with Confirmed or Mixed sending.</span></span>
+        </label>
+        <label class="feature pause-scans-setting">
+          <input type="checkbox" data-setting="pauseScans">
+          <span><span class="feature-name">Pause nearby scans while lights stream</span><span class="hint feature-desc">The app's scan for nearby
+            Bluetooth devices (every 5 minutes) waits while you drag the colour wheel, follow a screen, play a replay or use the phone's mic,
+            leaving the radio to the lights.</span><span class="needs"></span></span>
+        </label>
       </details>
     </section>
   </div>
@@ -933,7 +945,7 @@
   const PAIRED_KEY = 'led-lights-paired-before';
   // Bumped with every change to this page. Shown under the title, because GitHub Pages takes a
   // few minutes to publish an update.
-  const PAGE_VERSION = '3.0';
+  const PAGE_VERSION = '3.1';
   // Screen colour sync goes through Firestore, so no server of our own. Everything below is an
   // identifier that grants nothing on its own; the apiKey is pasted once on each device and kept in
   // that browser, as in Gym notes. Never run `firebase deploy`: Firebase Hosting would publish the
@@ -987,6 +999,8 @@
   // Your colours: saved per person in Firestore at users/<name>/config/colours, and kept in this
   // browser so they show at once and work without the access key.
   const COLOURS_KEY = 'led-lights-colours';
+  // The time of the last app exit already reported as a sync event.
+  const LAST_EXIT_KEY = 'led-lights-last-exit';
   const MAX_COLOURS = 24;
   const TUNE_LOCKED_TEXT = 'Paste the access key and pick whose lights these are to load the presets.';
   // A preset: boost 0–3 per band, favourite 0–5 per band (for screens with no colour), strength of
@@ -1028,8 +1042,21 @@
     today: { name: 'As today', desc: "Colour and brightness go out as fast as the phone takes them. \"Done\" only means they're in the phone's Bluetooth outbox, so a light with a weak signal can fall behind and replay old colours." },
     confirmed: { name: 'Confirmed', desc: "Each light confirms every change before it gets the next one, and newer changes replace older ones while it waits, so a slow light skips to the newest colour. A light that can't confirm is throttled instead." },
     throttled: { name: 'Throttled', desc: 'At most 10 changes a second to each light, and newer changes replace older ones while it waits.' },
+    mixed: { name: 'Mixed', desc: "Most changes go out without waiting, but every 5th waits for the light's \"got it\", which proves the ones before it arrived too, so a light is never more than a few changes behind. The last change after a drag is confirmed as well. A light that can't confirm is throttled instead." },
   };
   const THROTTLE_MS = 100;
+  // Mixed: every MIXED_EVERY-th change to a light waits for its "got it", and the last change after
+  // SETTLE_MS of quiet is sent again, confirmed.
+  const MIXED_EVERY = 5;
+  const SETTLE_MS = 300;
+  // A light that looks connected but isn't taking changes (website v3.1): a write with no answer for
+  // WRITE_STALL_MS, or FAIL_STREAK failed writes in a row, and it's reconnected.
+  const WRITE_STALL_MS = 5000;
+  const FAIL_STREAK = 2;
+  // Reconnect a light that falls behind (a setting): its answers average over LAG_MS for the last
+  // 5 s and are SLOW_FACTOR × the others'; at most once every LAG_COOLDOWN_MS per light.
+  const LAG_MS = 500;
+  const LAG_COOLDOWN_MS = 2 * 60000;
   // Diagnostics shows how each light kept up over this long.
   const SEND_STATS_MS = 10000;
   // Light health, under each light and in research data: a sample every 5 s (the signal in the
@@ -1211,11 +1238,13 @@
   const settings = {
     wheel: false, smoothing: 'smooth', speed: 1, repeat: false, repeatAll: false,
     person: '', screenEvery: 3000, screenGap: 1, screenScan: 10, flowMaths: true, features: {}, collapsed: {},
-    brightMin: SCREEN_DARKEST, brightMax: 100, screenFade: 800, sendMode: 'today', fastTurns: false, aliases: {},
+    brightMin: SCREEN_DARKEST, brightMax: 100, screenFade: 800, sendMode: 'today', fastTurns: false, aliases: {}, lagReconnect: true, pauseScans: true,
     ...loadJson(SETTINGS_KEY, {}),
   };
   if (!SEND_MODES[settings.sendMode]) settings.sendMode = 'today';
   settings.fastTurns = settings.fastTurns === true;
+  settings.lagReconnect = settings.lagReconnect !== false;
+  settings.pauseScans = settings.pauseScans !== false;
   // The names people gave their lights, by device id.
   if (!settings.aliases || typeof settings.aliases !== 'object') settings.aliases = {};
   delete settings.brightHow;
@@ -1581,12 +1610,13 @@
   // or streaming music levels does not build up a backlog. Commands for a light that
   // isn't connected wait here for up to PENDING_MAX_MS. "Live" commands (phone-mic
   // levels, tester) are never kept for a light that drops out.
-  function send(d, kind, bytes, live = false) {
+  // `extra` marks the entry, for example `settle` for Mixed sending's confirmed resend.
+  function send(d, kind, bytes, live = false, extra = {}) {
     d.pending = d.pending || new Map();
     // A change replaced before it went out to a connected light was skipped.
     if (d.pending.has(kind) && d.writeChar) noteSkip(d);
     d.pending.delete(kind);
-    d.pending.set(kind, { bytes, at: Date.now(), live });
+    d.pending.set(kind, { bytes, at: Date.now(), live, ...extra });
     if (d.writeChar) {
       if (!d.flushing) flush(d);
     } else {
@@ -1612,14 +1642,27 @@
         }
         const packets = Array.isArray(entry.bytes[0]) ? entry.bytes : [entry.bytes];
         const started = performance.now();
+        const how = sendHow(d);
+        // Mixed: every MIXED_EVERY-th change, and the settling resend, wait for the light's "got it".
+        const mixedConfirm = how === 'mixed' && (entry.settle || (d.sinceConfirmed || 0) >= MIXED_EVERY - 1);
+        const confirm = (CONFIRMED_KINDS.has(kind) || how === 'confirmed' || mixedConfirm) && d.writeChar.properties.write;
         try {
-          const confirm = (CONFIRMED_KINDS.has(kind) || sendHow(d) === 'confirmed') && d.writeChar.properties.write;
           for (const bytes of packets) {
             const data = new Uint8Array(bytes);
-            if (!confirm && d.writeChar.properties.writeWithoutResponse) await d.writeChar.writeValueWithoutResponse(data);
-            else await d.writeChar.writeValueWithResponse(data);
+            const write = !confirm && d.writeChar.properties.writeWithoutResponse
+              ? d.writeChar.writeValueWithoutResponse(data) : d.writeChar.writeValueWithResponse(data);
+            // A write that never gets an answer would hold this light up for good.
+            await withTimeout(write, WRITE_STALL_MS);
           }
           noteWrite(d, performance.now() - started);
+          d.failStreak = 0;
+          d.sinceConfirmed = confirm ? 0 : (d.sinceConfirmed || 0) + 1;
+          // Mixed: an unconfirmed change gets a confirmed resend once things go quiet; a confirmed
+          // one is already the colour the light ends on, so an earlier resend would be a step back.
+          if (how === 'mixed') {
+            if (confirm) clearTimeout(d.settleTimer);
+            else if (!entry.settle) scheduleSettle(d, kind, entry);
+          }
           if (!entry.live) d.missed = false;
           if (kind === 'power' || kind === 'test') log(`${nameOf(d)}: ${kind} sent [${packets.map(hex).join(' | ')}]`, 'ok');
         } catch (err) {
@@ -1627,6 +1670,14 @@
           // Dropped mid-write: keep the change for the reconnect unless a newer one replaced it.
           if (!d.device.gatt.connected) {
             if (!entry.live && !d.pending.has(kind)) d.pending.set(kind, entry);
+            break;
+          }
+          // Still "connected" but not taking changes: reconnect it, keeping this change for then.
+          d.failStreak = (d.failStreak || 0) + 1;
+          const stalled = /timed out/.test(err.message);
+          if (stalled || d.failStreak >= FAIL_STREAK) {
+            if (!entry.live && !d.pending.has(kind)) d.pending.set(kind, entry);
+            forceReconnect(d, stalled ? 'write_stalled' : 'writes_failing', { error: `${err.name}: ${err.message}`.slice(0, 120), kind });
             break;
           }
         }
@@ -1638,10 +1689,39 @@
   }
 
   // How changes go to this light: the Bluetooth sending setting, except that a light that can't
-  // confirm writes is throttled instead of confirmed.
+  // confirm writes is throttled instead of confirmed or mixed.
   function sendHow(d) {
-    if (settings.sendMode === 'confirmed' && !(d.writeChar && d.writeChar.properties.write)) return 'throttled';
+    if ((settings.sendMode === 'confirmed' || settings.sendMode === 'mixed') && !(d.writeChar && d.writeChar.properties.write)) return 'throttled';
     return settings.sendMode;
+  }
+
+  // Mixed: once a light has had no newer change for SETTLE_MS, its last one goes again, confirmed,
+  // so the colour it ends on is one it said "got it" to.
+  function scheduleSettle(d, kind, entry) {
+    clearTimeout(d.settleTimer);
+    d.settleTimer = setTimeout(() => {
+      if (!d.writeChar || (d.pending && d.pending.has(kind))) return;
+      send(d, kind, entry.bytes, entry.live, { settle: true });
+    }, SETTLE_MS);
+  }
+
+  // A light that looks connected but isn't taking changes, or has fallen far behind: drop its link
+  // and connect again, keeping what's waiting so it still lands (website v3.1). Logged for research.
+  function forceReconnect(d, reason, details = {}) {
+    if (d.forcing) return;
+    d.forcing = true;
+    log(`${nameOf(d)}: ${reason === 'lagging' ? 'falling behind' : 'not taking changes'}, so reconnecting.`, 'warn');
+    logEvent('light_stuck', { light: realNameOf(d), ...aliasField(d), lightId: lightIdOf(d.device.id), reason, ...details, ...lightResearch(d) });
+    try { d.device.gatt.disconnect(); } catch { /* already gone */ }
+    // The app says when the link closed; if it thought the link was already gone, it says nothing,
+    // so mark the light dropped here too.
+    setTimeout(() => {
+      if (!d.forcing || d.status !== 'connected') return;
+      d.writeChar = null;
+      d.status = 'idle';
+      scheduleReconnect(d);
+      queueRender();
+    }, 2000);
   }
 
   // Per light, for Diagnostics and the heartbeat: how long each write took until "done", and the
@@ -1725,7 +1805,78 @@
         });
       } catch { /* no reading this time */ }
     }
+    checkLagging();
     queueRender();
+  }
+
+  // Reconnect a light that falls behind (a setting): its answers over the last 5 s average more
+  // than LAG_MS and SLOW_FACTOR × the other lights', so a fresh connection should get it a better
+  // turn on the phone's radio. Answers are only timed with Confirmed or Mixed sending.
+  function checkLagging() {
+    if (!settings.lagReconnect) return;
+    const now = Date.now();
+    const averageOf = (d) => {
+      const writes = d.sendStats ? d.sendStats.writes.filter((w) => w.at > now - HEALTH_SAMPLE_MS) : [];
+      return writes.length >= 3 ? writes.reduce((sum, w) => sum + w.ms, 0) / writes.length : null;
+    };
+    const connected = lights().filter((d) => d.status === 'connected' && d.writeChar);
+    connected.forEach((d) => {
+      const mine = averageOf(d);
+      if (mine == null || mine < LAG_MS || now - (d.lagReconnectAt || 0) < LAG_COOLDOWN_MS) return;
+      const others = connected.filter((o) => o !== d).map(averageOf).filter((v) => v != null).sort((a, b) => a - b);
+      const median = others[Math.floor(others.length / 2)];
+      if (!others.length || mine < median * SLOW_FACTOR) return;
+      d.lagReconnectAt = now;
+      forceReconnect(d, 'lagging', { avgMs: Math.round(mine), othersMs: Math.round(median) });
+    });
+  }
+
+  // Tells the app when the lights are streaming (a drag on the colour wheel, following a screen, a
+  // replay or the phone mic), so its nearby scans wait and leave the radio to the lights (a
+  // setting; app v1.9).
+  let streamingTold = null;
+
+  function updateStreaming() {
+    const app = window.androidApp;
+    if (!app || typeof app.streaming !== 'function') return;
+    const streaming = settings.pauseScans && !!(usageLog.wheelFrom || screenFollow.unsubscribe || player.playing || mode === 'phonemic');
+    if (streaming === streamingTold) return;
+    streamingTold = streaming;
+    app.streaming(streaming).catch(() => {});
+  }
+
+  // Settings → Bluetooth tick boxes other than faster turns.
+  function renderBluetoothSettings() {
+    document.querySelectorAll('[data-setting]').forEach((el) => { el.checked = settings[el.dataset.setting]; });
+    const canPause = !!(window.androidApp && typeof window.androidApp.streaming === 'function');
+    $('[data-setting="pauseScans"]').disabled = !canPause;
+    $('.pause-scans-setting').classList.toggle('blocked', !canPause);
+    $('.pause-scans-setting .needs').textContent = canPause ? '' : window.androidApp ? 'Needs app v1.9 or later.' : 'Only in the Android app.';
+  }
+
+  function setupBluetoothSettings() {
+    document.querySelectorAll('[data-setting]').forEach((el) => el.addEventListener('change', (e) => {
+      settings[e.target.dataset.setting] = e.target.checked;
+      saveSettings();
+      updateStreaming();
+      renderBluetoothSettings();
+    }));
+    renderBluetoothSettings();
+  }
+
+  // FOR RESEARCH ONLY: why Android ended this app's last run (app v1.9), once per run, as an
+  // `app_exit` sync event placed at the time it happened.
+  async function reportLastExit() {
+    const app = window.androidApp;
+    if (!app || typeof app.lastExit !== 'function') return;
+    let exit = null;
+    try { exit = await app.lastExit(); } catch { return; }
+    if (!exit || !exit.at) return;
+    let seen = 0;
+    try { seen = Number(localStorage.getItem(LAST_EXIT_KEY)) || 0; } catch { /* reported again next time */ }
+    if (exit.at <= seen) return;
+    try { localStorage.setItem(LAST_EXIT_KEY, String(exit.at)); } catch { /* reported again next time */ }
+    logEvent('app_exit', { ...exit, reportedAt: Date.now() });
   }
 
   // Average time until "done" over the last half minute, or null without changes sent.
@@ -2256,6 +2407,7 @@
       d.status = 'connected';
       d.retryDelay = 0;
       d.missed = false;
+      Object.assign(d, { forcing: false, failStreak: 0, sinceConfirmed: 0 });
       stopWatching(d);
       log(`${nameOf(d)} connected.`, 'ok');
       if (d.protocol && !d.writeChar) log(`${nameOf(d)} looks like ${PROTOCOLS[d.protocol].label} but has no fff3 characteristic.`, 'warn');
@@ -5154,6 +5306,8 @@
       sending: settings.sendMode,
       ...(sent.length ? { sent } : {}),
       ...(app && typeof app.batteryUnrestricted === 'function' ? { unrestricted: usageLog.unrestricted, backgroundRestricted: usageLog.backgroundRestricted } : {}),
+      // App v1.9: Battery Saver, deep sleep (Doze) and the app's standby bucket right now.
+      ...(app && typeof app.powerState === 'function' ? { power: await app.powerState().catch(() => null) } : {}),
       // FOR RESEARCH ONLY: every light's Bluetooth state and the phone's position right now.
       research: researchNow(),
     });
@@ -5253,6 +5407,7 @@
     setTimeout(sendHeartbeat, FIRST_HEARTBEAT_MS);
     setInterval(sendHeartbeat, HEARTBEAT_MS);
     logEvent('open');
+    reportLastExit();
     sendLog();
   }
 
@@ -5522,6 +5677,7 @@
   setInterval(() => {
     expirePending();
     renderSendStats();
+    updateStreaming();
     if (syncActive || lights().some(waitingFor)) queueRender();
   }, 1000);
 
@@ -5537,6 +5693,7 @@
   setupRename();
   setupFastTurns();
   setupSavedColours();
+  setupBluetoothSettings();
   setInterval(healthTick, HEALTH_SAMPLE_MS);
   setupUsageLog();
   setupCollapsibles();

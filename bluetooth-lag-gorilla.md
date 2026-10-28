@@ -1,6 +1,8 @@
 # Why one light lags behind (gorilla version, 10/28/26)
 
 > **Built in website v2.8:** Settings → Bluetooth sending (*As today* / *Confirmed* / *Throttled*), a per-light readout in Diagnostics, and the setting plus each light's numbers in the heartbeat. Fixes 3 and 4 aren't built.
+>
+> **Website v2.9–v3.1, app v1.8–v1.9:** faster Bluetooth turns (fix 3) is a setting; the Mixed sending option, a lag watchdog that reconnects a light falling behind, and pausing nearby scans while lights stream were added too.
 
 ## 1. What you saw
 
